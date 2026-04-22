@@ -60,10 +60,39 @@
               },
               "pinned": true,
               "icon": "terminal",
-              "title": "Terminal: ✳ populate-bullstrap-weekly-notes"
+              "title": "Terminal: ⠐ populate-bullstrap-weekly-notes"
+            }
+          },
+          {
+            "id": "9d3a6a12cbc80abe",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Clients/InheritCo./04-21 Status Update.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "04-21 Status Update"
+            }
+          },
+          {
+            "id": "2b757eeeb6f05182",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Clients/ModishFurnishing/04-21 Status Update.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "04-21 Status Update"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -227,8 +256,16 @@
       "terminal:Open terminal": false
     }
   },
-  "active": "a093ac768379a441",
+  "active": "5e7a44c41e509f3a",
   "lastOpenFiles": [
+    "Clients/ModishFurnishing/04-21 Status Update.md",
+    "Clients/Muir Way/04-21 Weekly -- Meeting.md",
+    "Clients/LinkNecklaces/04-17 Strategy Call.md",
+    "Clients/Grace Coffee/04-09 Update Call.md",
+    "Clients/GauchoLife/04-09 Strategy Call.md",
+    "Clients/InheritCo./04-21 Status Update.md",
+    "Clients/BetterwayHealth/04-16 Weekly Call.md",
+    "Clients/Ease/04-21 CRO Call.md",
     "Clients/Bullstrap/04-21 Weekly Call.md"
   ]
 }
