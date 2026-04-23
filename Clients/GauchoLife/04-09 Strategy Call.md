@@ -19,13 +19,13 @@ duration: ~45 min
 
 **Andreas**
 - [x] Finalize + report Churchill images test result on desktop → implement permanently
-- [ ] Create "Lifetime Warranty" badge variant for grills on collection pages
-- [ ] Develop Dynamic Add to Cart Button test for low-cost products (belts, excluding grills)
-- [ ] Redesign cart (better layout + start test showing/hiding price in cart)
+- [x] Create "Lifetime Warranty" badge variant for grills on collection pages
+- [x] Develop Dynamic Add to Cart Button test for low-cost products (belts, excluding grills)
+- [x] Redesign cart (better layout + start test showing/hiding price in cart)
 - [ ] Build Grill Builder to guide users in grill selection
 - [ ] Implement testimonial videos — visible on store, above gallery or as product image substitute
-- [ ] Launch menu A/B test with two themes (verify equal functionality first)
-- [ ] Remove duplicate "Double Trust Badges" tags for visual consistency
+- [x] Launch menu A/B test with two themes (verify equal functionality first)
+- [x] Remove duplicate "Double Trust Badges" tags for visual consistency
 
 **Marcos**
 - [ ] Share list of best-selling embroidered belts for Guided Selection functionality
