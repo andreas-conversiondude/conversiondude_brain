@@ -1,0 +1,127 @@
+--- a/blocks/_product-media-gallery.liquid	2026-09-02 17:07:20.000000000 +0000
++++ b/blocks/_product-media-gallery.liquid	2026-09-02 17:18:27.185358995 +0000
+@@ -279,41 +279,43 @@
+ {%- comment -%}
+   BAR-STOOL GALLERY REORDER: display array (sorted_media) only.
+   selected_product.media is never modified.
+-  Identified by collection handle "bar-stools".
+-  FUTURE LIFESTYLE PLACEMENT: once lifestyle images exist, add second-position
+-  pinning here, after the thumbnail is confirmed at index 0.
++  Bar stools are identified with snippets/pdp-redo-is-barstool.liquid, the same
++  test snippets/card-gallery.liquid uses, so the PDP gallery and the product
++  cards can never disagree about which products get the treatment.
++
++  The white-background packshot (alt "collection thumbnail") is the card image on
++  collection pages, so the PDP leads with the lifestyle shot instead. When the
++  packshot lands at index 0 it is demoted to second place; everything else keeps
++  the merchant's order, and products whose packshot already sits further down are
++  left alone.
+ {%- endcomment -%}
+ {%- liquid
+-  assign is_bar_stool = false
+-  for col in selected_product.collections
+-    if col.handle == 'bar-stools'
+-      assign is_bar_stool = true
+-    endif
+-  endfor
+-  if is_bar_stool and sorted_media.size > 1
+-    assign thumb_media_id = ''
+-    for m in sorted_media
+-      if thumb_media_id == ''
+-        assign m_alt_lower = m.alt | strip | downcase
+-        if m_alt_lower == 'collection thumbnail'
+-          assign thumb_media_id = m.id
+-        endif
+-      endif
+-    endfor
+-    if thumb_media_id != ''
+-      assign first_m = sorted_media | first
+-      if first_m.id != thumb_media_id
+-        assign reordered_media = '' | split: ','
+-        assign thumb_item = selected_product.media | where: 'id', thumb_media_id
+-        assign reordered_media = reordered_media | concat: thumb_item
+-        for m in sorted_media
+-          if m.id != thumb_media_id
+-            assign m_item = selected_product.media | where: 'id', m.id
+-            assign reordered_media = reordered_media | concat: m_item
++  capture is_bar_stool
++    render 'pdp-redo-is-barstool', product: selected_product
++  endcapture
++  assign is_bar_stool = is_bar_stool | strip
++
++  if is_bar_stool == 'true' and sorted_media.size > 1
++    assign first_m = sorted_media | first
++    assign first_m_alt = first_m.alt | strip | downcase
++
++    if first_m_alt == 'collection thumbnail'
++      assign reordered_media = '' | split: ','
++      assign thumb_item = selected_product.media | where: 'id', first_m.id
++
++      for m in sorted_media
++        unless forloop.first
++          assign m_item = selected_product.media | where: 'id', m.id
++          assign reordered_media = reordered_media | concat: m_item
++
++          # Slot the packshot back in right after the new lead image.
++          if forloop.index == 2
++            assign reordered_media = reordered_media | concat: thumb_item
+           endif
+-        endfor
+-        assign sorted_media = reordered_media
+-      endif
++        endunless
++      endfor
++
++      assign sorted_media = reordered_media
+     endif
+   endif
+ -%}
+--- a/snippets/card-gallery.liquid	2026-09-02 17:07:20.000000000 +0000
++++ b/snippets/card-gallery.liquid	2026-09-02 17:18:40.699207688 +0000
+@@ -126,6 +126,46 @@
+         assign media_list_to_show = all_media
+       endif
+ 
++      # BAR-STOOL CARD IMAGE: display array (media_list_to_show) only.
++      # product.media is never modified.
++      # Bar stool cards lead with the white-background packshot (alt "collection
++      # thumbnail") while the PDP gallery leads with the lifestyle shot - see
++      # blocks/_product-media-gallery.liquid, which uses the same bar-stool test.
++      # The packshot is skipped when it belongs to a variant other than the
++      # selected one, because the hidden-variant rules below would hide it.
++      capture is_bar_stool
++        render 'pdp-redo-is-barstool', product: product
++      endcapture
++      assign is_bar_stool = is_bar_stool | strip
++
++      if is_bar_stool == 'true' and media_list_to_show.size > 1
++        assign packshot_media = '' | split: ','
++        assign remaining_media = '' | split: ','
++
++        for m in media_list_to_show
++          assign m_item = all_media | where: 'id', m.id
++          assign m_alt = m.alt | strip | downcase
++          assign pin_media = false
++
++          if m_alt == 'collection thumbnail' and packshot_media.size == 0
++            assign pin_media = true
++            if variant_images contains m.src and m.src != selected_variant_image
++              assign pin_media = false
++            endif
++          endif
++
++          if pin_media
++            assign packshot_media = packshot_media | concat: m_item
++          else
++            assign remaining_media = remaining_media | concat: m_item
++          endif
++        endfor
++
++        if packshot_media.size > 0
++          assign media_list_to_show = packshot_media | concat: remaining_media
++        endif
++      endif
++
+       if all_media.size > 2 and generic_media_size > 0
+         assign show_arrows = true
+       endif
