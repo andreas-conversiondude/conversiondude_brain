@@ -1,0 +1,34 @@
+{%- doc -%}
+  Classifies one entry of the custom.customer_photos file-reference list so the
+  PDP Redo customer photos section can count and render it.
+
+  Echoes one of:
+    image      - an image file (has width/height, render with image_tag)
+    video      - a video picked from Content > Files (has sources, video_tag)
+    file_video - a generic file whose URL is a video (render a plain <video>)
+    ""         - anything else (a PDF, say) - the caller skips it
+
+  A file_reference list hands back a different Liquid object per file type, so
+  the type is inferred from what the object actually responds to rather than
+  from a media_type field that only some of them carry.
+
+  @param {object} media - one entry of the metafield list
+
+  @example
+    {%- capture kind -%}{%- render 'pdp-redo-customer-media-kind', media: media -%}{%- endcapture -%}
+    {%- assign kind = kind | strip -%}
+{%- enddoc -%}
+{%- liquid
+  assign kind = ''
+
+  if media.width
+    assign kind = 'image'
+  elsif media.sources.size > 0
+    assign kind = 'video'
+  else
+    assign media_url = media.url | default: '' | downcase | split: '?' | first
+    if media_url contains '.mp4' or media_url contains '.mov' or media_url contains '.webm' or media_url contains '.m4v'
+      assign kind = 'file_video'
+    endif
+  endif
+-%}{{ kind }}

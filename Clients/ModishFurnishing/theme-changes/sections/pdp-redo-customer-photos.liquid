@@ -1,0 +1,397 @@
+{%- comment -%}
+  PDP Redo — "Modish in your home".
+
+  Replaces the "Shop The Full Collection" product-list section on this template.
+  There is no collection logic here at all: the photos are picked per product in
+  the Shopify admin through a list-of-file-references metafield, and the section
+  outputs absolutely nothing when that metafield is empty — no heading, no
+  wrapper, no padding — so products without customer photos are unaffected.
+
+  Metafields (create these definitions in the admin, both on Product):
+
+      custom.customer_photos      File -> list of files (Image and Video)
+          The media itself - images and videos both render. Empty = nothing
+          renders. Videos need to be picked from Content > Files; they play
+          muted and looped once scrolled into view and pause again on the way
+          out, so a strip of them costs nothing until it is actually seen.
+
+      custom.show_customer_photos  True or false
+          Manual override. false hides the section even when photos are
+          attached. Left blank it shows, so adding photos is enough on its own
+          and products that predate this toggle are unaffected — the switch only
+          ever suppresses, it never forces an empty section to appear.
+
+  A file_reference list hands back a different Liquid object per file type, so
+  snippets/pdp-redo-customer-media-kind.liquid classifies each entry. Anything
+  that is neither an image nor a video (a stray PDF, say) is skipped rather than
+  rendered broken.
+
+  Horizontal scroll with snap on every breakpoint — the row is meant to read as
+  a strip you push through, and 92% of this store's traffic is mobile.
+{%- endcomment -%}
+
+{%- liquid
+  assign product = section.settings.product | default: product
+
+  comment
+    Explicit false hides the section; blank or true falls through to the photo
+    check below. Compared against false rather than truthiness because an unset
+    boolean metafield is nil, and nil must mean "show", not "hide".
+  endcomment
+  assign show_override = product.metafields.custom.show_customer_photos.value
+  assign is_hidden = false
+  if show_override == false
+    assign is_hidden = true
+  endif
+
+  assign photos = product.metafields.custom.customer_photos.value
+  assign photo_count = 0
+  assign has_video = false
+
+  if is_hidden == false and photos != blank
+    for photo in photos
+      capture photo_kind
+        render 'pdp-redo-customer-media-kind', media: photo
+      endcapture
+      assign photo_kind = photo_kind | strip
+
+      unless photo_kind == ''
+        assign photo_count = photo_count | plus: 1
+        if photo_kind != 'image'
+          assign has_video = true
+        endif
+      endunless
+    endfor
+  endif
+-%}
+
+{%- if photo_count > 0 -%}
+  <div class="section-background color-{{ section.settings.color_scheme }}"></div>
+
+  <section
+    class="pdp-redo-photos section section--page-width color-{{ section.settings.color_scheme }} spacing-style"
+    style="{% render 'spacing-style', settings: section.settings %}"
+    aria-labelledby="PdpRedoPhotosTitle-{{ section.id }}"
+  >
+    <div class="pdp-redo-photos__head">
+      <h2 class="pdp-redo-photos__title" id="PdpRedoPhotosTitle-{{ section.id }}">
+        {{ section.settings.title }}
+      </h2>
+      {%- if section.settings.subtitle != blank -%}
+        <p class="pdp-redo-photos__subtitle">{{ section.settings.subtitle }}</p>
+      {%- endif -%}
+    </div>
+
+    <ul class="pdp-redo-photos__row" role="list">
+      {%- for photo in photos -%}
+        {%- liquid
+          capture photo_kind
+            render 'pdp-redo-customer-media-kind', media: photo
+          endcapture
+          assign photo_kind = photo_kind | strip
+
+          comment
+            alt is resolved into a variable first on purpose. Writing
+            `alt: photo.alt | default: ...` inside the argument list ends the
+            image_tag filter and starts a `default` filter instead, which
+            silently swallowed the class and alt arguments — the images rendered
+            with no class at all, so the 1:1 crop never applied.
+          endcomment
+          assign photo_alt = photo.alt | default: section.settings.title
+        -%}
+
+        {%- case photo_kind -%}
+          {%- when 'image' -%}
+            <li class="pdp-redo-photos__item">
+              {{
+                photo
+                | image_url: width: 720
+                | image_tag:
+                  loading: 'lazy',
+                  widths: '180, 270, 360, 540, 720',
+                  sizes: '(min-width: 750px) 220px, 40vw',
+                  alt: photo_alt,
+                  class: 'pdp-redo-photos__img'
+              }}
+            </li>
+
+          {%- when 'video' -%}
+            {%- comment -%}
+              Shopify supplies the cover frame and an adaptive stream here. The
+              tag is asked for no autoplay and no controls; the script below
+              starts it on the way into view, so nothing downloads on load.
+            {%- endcomment -%}
+            <li class="pdp-redo-photos__item">
+              <div class="pdp-redo-photos__media" data-pdp-photo-media>
+                {{
+                  photo
+                  | video_tag:
+                    image_size: '720x',
+                    autoplay: false,
+                    loop: true,
+                    muted: true,
+                    controls: false
+                }}
+                {%- render 'pdp-redo-customer-photos-play' -%}
+              </div>
+            </li>
+
+          {%- when 'file_video' -%}
+            {%- comment -%}
+              A video that landed in Files as a plain upload rather than as a
+              Shopify video: one fixed file, no adaptive bitrate and no cover
+              frame, so keep these small.
+            {%- endcomment -%}
+            <li class="pdp-redo-photos__item">
+              <div class="pdp-redo-photos__media" data-pdp-photo-media>
+                <video muted loop playsinline preload="none" aria-label="{{ photo_alt | escape }}">
+                  <source src="{{ photo.url }}" type="video/mp4">
+                </video>
+                {%- render 'pdp-redo-customer-photos-play' -%}
+              </div>
+            </li>
+        {%- endcase -%}
+      {%- endfor -%}
+    </ul>
+  </section>
+{%- endif -%}
+
+{%- if photo_count > 0 and has_video -%}
+  <script>
+    (function () {
+      var root = document.getElementById('shopify-section-' + {{ section.id | json }});
+      if (!root) return;
+
+      var mediaEls = Array.prototype.slice.call(root.querySelectorAll('[data-pdp-photo-media]'));
+      if (!mediaEls.length) return;
+
+      mediaEls.forEach(function (media) {
+        var video = media.querySelector('video');
+        if (!video) return;
+
+        // Nothing downloads until the tile is actually in view.
+        video.preload = 'none';
+        video.muted = true;
+        video.defaultMuted = true;
+        video.loop = true;
+        video.controls = false;
+        video.setAttribute('muted', '');
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.removeAttribute('autoplay');
+
+        video.addEventListener('playing', function () {
+          media.setAttribute('data-playing', 'true');
+        });
+        video.addEventListener('pause', function () {
+          media.removeAttribute('data-playing');
+        });
+      });
+
+      var reduceMotion =
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // Without autoplay the poster frame is all there is, so give those
+      // viewers controls instead of a still they cannot start.
+      if (reduceMotion || !('IntersectionObserver' in window)) {
+        mediaEls.forEach(function (media) {
+          var video = media.querySelector('video');
+          if (!video) return;
+          video.controls = true;
+          video.preload = 'metadata';
+          media.removeAttribute('data-playing');
+        });
+        return;
+      }
+
+      var observer = new IntersectionObserver(
+        function (entries) {
+          entries.forEach(function (entry) {
+            var video = entry.target.querySelector('video');
+            if (!video) return;
+
+            if (entry.isIntersecting) {
+              if (video.preload === 'none') {
+                video.preload = 'metadata';
+                video.load();
+              }
+              var attempt = video.play();
+              if (attempt && typeof attempt.catch === 'function') {
+                // Autoplay refused (a data-saver setting, say): fall back to
+                // controls rather than leaving a dead tile.
+                attempt.catch(function () {
+                  video.controls = true;
+                });
+              }
+            } else if (!video.paused) {
+              video.pause();
+            }
+          });
+        },
+        { threshold: 0.35 }
+      );
+
+      mediaEls.forEach(function (media) {
+        observer.observe(media);
+      });
+    })();
+  </script>
+{%- endif -%}
+
+{% stylesheet %}
+  .pdp-redo-photos {
+    display: block;
+  }
+
+  .pdp-redo-photos__head {
+    margin-block-end: 12px;
+  }
+
+  .pdp-redo-photos__title {
+    margin: 0 0 3px;
+    font-family: var(--font-heading--family);
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
+  .pdp-redo-photos__subtitle {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.6);
+  }
+
+  .pdp-redo-photos__row {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 0 0 4px;
+    list-style: none;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .pdp-redo-photos__row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .pdp-redo-photos__item {
+    flex: 0 0 40vw;
+    max-width: 220px;
+    scroll-snap-align: start;
+  }
+
+  .pdp-redo-photos__img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    background-color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.04);
+  }
+
+  /* Videos share the 1:1 crop of the photos so the strip stays on one line. */
+  .pdp-redo-photos__media {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    background-color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.04);
+  }
+
+  .pdp-redo-photos__media :is(video, img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* video_tag wraps the element; the wrapper must not shrink the crop. */
+  .pdp-redo-photos__media .video-wrapper,
+  .pdp-redo-photos__media deferred-media {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .pdp-redo-photos__play {
+    position: absolute;
+    inset-block-end: 6px;
+    inset-inline-start: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    color: #fff;
+    background-color: rgb(0 0 0 / 0.55);
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .pdp-redo-photos__media[data-playing] .pdp-redo-photos__play {
+    opacity: 0;
+  }
+
+  @media screen and (min-width: 750px) {
+    .pdp-redo-photos__title {
+      font-size: 24px;
+    }
+
+    .pdp-redo-photos__subtitle {
+      font-size: 13px;
+    }
+
+    .pdp-redo-photos__item {
+      flex: 0 0 220px;
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "PDP Redo customer photos",
+  "tag": "section",
+  "class": "shopify-section--pdp-redo-photos",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Reads custom.customer_photos (File, list of images and videos). Videos play muted and looped once scrolled into view. Renders nothing when the list is empty, or when custom.show_customer_photos is set to false."
+    },
+    {
+      "type": "product",
+      "id": "product",
+      "label": "t:settings.product",
+      "info": "Leave empty on a product template — it uses the product being viewed."
+    },
+    {
+      "type": "text",
+      "id": "title",
+      "label": "Heading",
+      "default": "Modish in your home"
+    },
+    {
+      "type": "text",
+      "id": "subtitle",
+      "label": "Sub-line",
+      "default": "Photos sent in by customers who own this product"
+    },
+    {
+      "type": "color_scheme",
+      "id": "color_scheme",
+      "label": "t:settings.color_scheme",
+      "default": "scheme-1"
+    },
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 2, "unit": "px", "default": 24 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 2, "unit": "px", "default": 24 }
+  ],
+  "presets": [
+    { "name": "PDP Redo customer photos" }
+  ]
+}
+{% endschema %}
