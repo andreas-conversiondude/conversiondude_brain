@@ -113,3 +113,23 @@ backrest. Semi-circular base, added stability" -> "Curved backrest", "Versatile
 design ... interiors, from contemporary to transitional" -> "Versatile design
 that complements a variety of interiors", decimals intact, numeric rows
 untouched.
+
+## Badge row: dining chairs show total height (same day)
+
+`blocks/pdp-redo-description-review.liquid` builds the three-badge row
+(material | measurement | colour). A dining-chair branch now runs after every
+existing size rule and before the manual handle override:
+
+- value comes from `pdp-redo-spec-value` field `total_height` - the same source
+  as the Details & Dimensions "Total height" row, so the two can never drift
+- formatted as "86cm High", matching "54cm Wide"
+- gated by `pdp-redo-is-dining-chair.liquid`, which excludes anything passing
+  the bar-stool test, so bar stools and every other type keep their badge
+- no total height resolves -> badge_size keeps whatever the existing rules
+  produced (the width badge), never an empty badge
+
+The default template's `product-description-review.liquid` is untouched.
+
+Verified against a Liquid engine, 7 cases: dining chair by type / collection /
+tag / title all render "86cm High"; a dining chair with no dimension block keeps
+"54cm Wide"; bar stool and sofa keep "54cm Wide".
