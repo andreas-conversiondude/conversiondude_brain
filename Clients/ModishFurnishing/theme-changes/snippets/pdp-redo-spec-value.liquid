@@ -10,7 +10,8 @@
       fabric | frame | assembly                    -> a display string
       colour | design                              -> a display string, read
         straight off the description's "Colour:" / "Design:" line via
-        snippets/pdp-redo-description-label.liquid (no metafield entry needed)
+        snippets/pdp-redo-description-label.liquid (no metafield entry needed;
+        colour ignores the metafields entirely, see below)
 
   Metafields read (all under the "custom" namespace, all optional):
       custom.seat_height    number / single line text
@@ -20,8 +21,14 @@
       custom.fabric         single line text
       custom.frame          single line text
       custom.assembly       single line text
-      custom.colour         single line text  (custom.color also accepted)
       custom.design         single line text
+
+  COLOUR IS PARSED, NEVER READ FROM A METAFIELD
+  ---------------------------------------------
+  custom.color on this store is a Color metafield, so its .value is a ColorDrop
+  and printing it renders the literal text "[ColorDrop]" instead of a colour
+  name. The Colour row therefore always comes from the description's "Colour:"
+  line, exactly like the Design row.
 
   DESCRIPTION FALLBACK
   --------------------
@@ -50,6 +57,7 @@
 
 {%- liquid
   assign result = ''
+  assign was_parsed = false
 
   comment
     1. Metafield wins whenever it is set.
@@ -69,8 +77,6 @@
       assign result = product.metafields.custom.frame.value
     when 'assembly'
       assign result = product.metafields.custom.assembly.value
-    when 'colour'
-      assign result = product.metafields.custom.colour.value | default: product.metafields.custom.color.value
     when 'design'
       assign result = product.metafields.custom.design.value
   endcase
@@ -89,11 +95,13 @@
         render 'pdp-redo-description-label', product: product, labels: 'colour,color'
       endcapture
       assign result = result | strip
+      assign was_parsed = true
     elsif field == 'design'
       capture result
         render 'pdp-redo-description-label', product: product, labels: 'design'
       endcapture
       assign result = result | strip
+      assign was_parsed = true
     endif
   endif
 
@@ -104,6 +112,7 @@
       once.
     endcomment
     assign hay = product.description | strip_html | downcase
+    assign was_parsed = true
 
     case field
       when 'seat_height'
@@ -251,6 +260,48 @@
           endif
         endif
     endcase
+  endif
+
+  comment
+    3. Every parsed text value is cut to a single clause so no row can wrap:
+    keep whatever comes before the first comma or full stop, whichever lands
+    first, and drop the punctuation with it. "Versatile design that complements
+    a variety of interiors, from contemporary to transitional" becomes
+    "Versatile design that complements a variety of interiors".
+
+    This runs outside the fallback branch on purpose: colour and design resolve
+    in step 2a, so a truncation nested inside step 2b would never see them.
+
+    Only parsed values are cut. A metafield someone typed by hand is left
+    exactly as entered, and numeric fields are excluded either way - a decimal
+    like 45.5 would be cut at its own point and report 45 - so the CSS ellipsis
+    in blocks/pdp-redo-specs.liquid is what keeps those on one line.
+  endcomment
+  assign single_line_fields = 'colour,design,fabric,frame,assembly' | split: ','
+
+  if was_parsed and result != blank and single_line_fields contains field
+    assign upto_comma = result | split: ',' | first
+    assign upto_stop = result | split: '.' | first
+    assign comma_size = upto_comma | size
+    assign stop_size = upto_stop | size
+
+    if stop_size < comma_size
+      assign result = upto_stop
+    else
+      assign result = upto_comma
+    endif
+
+    assign result = result | strip
+
+    comment
+      A single clause can still outrun the column, so it is capped here as a
+      backstop for a runaway sentence. The cap is deliberately generous: the
+      CSS ellipsis is viewport-accurate and the real guarantee of one line, so
+      a normal clause like "Versatile design that complements a variety of
+      interiors" should reach the browser intact and be clipped only where it
+      genuinely does not fit.
+    endcomment
+    assign result = result | truncate: 60, '…'
   endif
 -%}
 {{- result -}}

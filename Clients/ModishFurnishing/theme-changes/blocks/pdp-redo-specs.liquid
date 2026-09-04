@@ -11,6 +11,14 @@
   "Colour:" / "Design:" lines of the description's Specifications block. A
   product whose description omits a label simply loses that row.
 
+  ONE LINE PER ROW
+  ----------------
+  Parsed text values are cut to a single clause in the snippet (everything up
+  to the first comma or full stop). The CSS below is the hard guarantee: the
+  label column has a fixed width and never wraps, and a value too long for its
+  column is clipped with an ellipsis instead of wrapping, with the full text
+  kept in the cell's title attribute.
+
   DINING CHAIRS
   -------------
   Dining chairs show Total height where bar stools show Width, so the Width row
@@ -135,19 +143,19 @@
           <tr><th scope="row">Depth</th><td>{{ spec_depth }}cm</td></tr>
         {%- endif -%}
         {%- if colour != blank -%}
-          <tr><th scope="row">Colour</th><td>{{ colour }}</td></tr>
+          <tr><th scope="row">Colour</th><td title="{{ colour | escape }}">{{ colour }}</td></tr>
         {%- endif -%}
         {%- if design != blank -%}
-          <tr><th scope="row">Design</th><td>{{ design }}</td></tr>
+          <tr><th scope="row">Design</th><td title="{{ design | escape }}">{{ design }}</td></tr>
         {%- endif -%}
         {%- if fabric != blank -%}
-          <tr><th scope="row">Fabric</th><td>{{ fabric }}</td></tr>
+          <tr><th scope="row">Fabric</th><td title="{{ fabric | escape }}">{{ fabric }}</td></tr>
         {%- endif -%}
         {%- if frame != blank -%}
-          <tr><th scope="row">Frame</th><td>{{ frame }}</td></tr>
+          <tr><th scope="row">Frame</th><td title="{{ frame | escape }}">{{ frame }}</td></tr>
         {%- endif -%}
         {%- if assembly != blank -%}
-          <tr><th scope="row">Assembly</th><td>{{ assembly }}</td></tr>
+          <tr><th scope="row">Assembly</th><td title="{{ assembly | escape }}">{{ assembly }}</td></tr>
         {%- endif -%}
       </tbody>
     </table>
@@ -198,10 +206,13 @@
     font-weight: 500;
   }
 
+  /* Fixed layout is what lets the label column claim a width the browser has
+     to honour, so "Seat height" and "Total height" stay on one line. */
   .pdp-redo-specs__table {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
+    table-layout: fixed;
   }
 
   .pdp-redo-specs__table tr {
@@ -216,10 +227,25 @@
     color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.72);
   }
 
+  .pdp-redo-specs__table th {
+    width: 38%;
+    white-space: nowrap;
+    padding-inline-end: 10px;
+  }
+
+  /* One line, always. A value the column cannot fit is clipped with an
+     ellipsis rather than pushed onto a second line; the full text stays in
+     the title attribute. min-width: 0 is required for the ellipsis to take
+     effect inside a table cell. */
   .pdp-redo-specs__table td {
     text-align: right;
     font-weight: 500;
     color: var(--color-foreground, #111);
+    min-width: 0;
+    max-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .pdp-redo-specs__diagram {
@@ -241,6 +267,10 @@
 
     .pdp-redo-specs__table {
       font-size: 13px;
+    }
+
+    .pdp-redo-specs__table th {
+      width: 32%;
     }
   }
 {% endstylesheet %}

@@ -89,3 +89,27 @@ parses the full text and other blocks still use it.
   no Colour/Design labels, and a product with the Colour metafield set: rows,
   order and the Width/Total height swap all as specified.
 - Not yet checked in a live preview - needs the theme uploaded.
+
+## Follow-up fixes (same day)
+
+1. **Colour rendered as "[ColorDrop]".** `custom.color` on this store is a
+   **Color**-type metafield, so `.value` is a ColorDrop object and printing it
+   gives the literal "[ColorDrop]". The Colour row no longer reads any
+   metafield - it is always the parsed "Colour:" line, like Design.
+2. **One line per row.** Parsed text values (colour, design, fabric, frame,
+   assembly) are cut at the first comma or full stop, whichever comes first,
+   punctuation dropped, then capped at 60 characters with an ellipsis as a
+   backstop. Numeric rows are excluded so a decimal like 55.5 is not cut at its
+   own point. The truncation sits outside the fallback branch: colour and design
+   resolve earlier, so nesting it there meant it never ran for them.
+3. **Label column wrapping.** The table is `table-layout: fixed` with the label
+   column at 38% (32% from 750px) and `white-space: nowrap`, so "Seat height"
+   and "Total height" stay on one line. Values are `nowrap` +
+   `text-overflow: ellipsis` and stay right-aligned; the full text is kept in
+   each cell's title attribute.
+
+Verified against a Liquid engine: ColorDrop metafield ignored, "Curved
+backrest. Semi-circular base, added stability" -> "Curved backrest", "Versatile
+design ... interiors, from contemporary to transitional" -> "Versatile design
+that complements a variety of interiors", decimals intact, numeric rows
+untouched.
