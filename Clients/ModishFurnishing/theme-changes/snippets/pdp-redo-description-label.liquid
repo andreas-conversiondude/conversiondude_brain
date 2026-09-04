@@ -1,0 +1,96 @@
+{%- doc -%}
+  Pulls a single "Label: value" line out of the product description.
+
+  Used by the PDP Redo spec table for the Colour and Design rows, which have no
+  metafield of their own — the value is read straight from the Specifications
+  block that every description already carries:
+
+      Specifications:
+      Material: Soft velvet upholstery, durable matte black metal frame
+      Colour: Cream (seat and backrest), Matte black (frame)
+      Design: Curved backrest, semi-circular base for added style and stability
+
+  Returns the text after the label up to the end of that line, with the bold
+  tags and surrounding whitespace stripped. Returns nothing when the label is
+  absent, so the caller can drop the row instead of rendering an empty one.
+
+  @param {object} product - the product object
+  @param {string} labels - comma-separated aliases to try in order, without the
+    colon, e.g. "colour,color". Matching is case-insensitive.
+
+  @example
+    {%- capture colour -%}
+      {%- render 'pdp-redo-description-label', product: product, labels: 'colour,color' -%}
+    {%- endcapture -%}
+
+  WHY THE LINE BREAKS ARE REPLACED BEFORE THE TAGS ARE STRIPPED
+  -------------------------------------------------------------
+  strip_html on its own removes <br> and </p> without putting anything in their
+  place, so "Colour: Cream</p><p>Design: Curved" collapses into one line and the
+  Colour value swallows the Design line. Every line boundary is therefore turned
+  into a sentinel first; the sentinel is what the value is cut at.
+
+  The label is located on a lower-cased copy (Liquid's split is case-sensitive)
+  but the value is sliced out of the original, so the reader sees "Cream (seat
+  and backrest)", not "cream (seat and backrest)". downcase does not change the
+  length of the string, so the offset carries across unchanged.
+{%- enddoc -%}
+{%- liquid
+  assign result = ''
+  assign source = product.description
+
+  if source != blank
+    assign text = source | newline_to_br
+    assign text = text | replace: '<br />', '~NL~'
+    assign text = text | replace: '<br/>', '~NL~'
+    assign text = text | replace: '<br>', '~NL~'
+    assign text = text | replace: '</p>', '~NL~'
+    assign text = text | replace: '</div>', '~NL~'
+    assign text = text | replace: '</li>', '~NL~'
+    assign text = text | replace: '</h1>', '~NL~'
+    assign text = text | replace: '</h2>', '~NL~'
+    assign text = text | replace: '</h3>', '~NL~'
+    assign text = text | replace: '</h4>', '~NL~'
+    assign text = text | replace: '</h5>', '~NL~'
+    assign text = text | replace: '</h6>', '~NL~'
+
+    comment
+      strip_html takes the <strong>/<b> wrappers off both the label and the
+      value, and removes any style="color: ..." attribute before the search
+      runs, so an inline style can never be mistaken for the Colour line.
+    endcomment
+    assign text = text | strip_html | replace: '&nbsp;', ' '
+    assign lower = text | downcase
+
+    comment
+      A value that is not closed by a line boundary is cut at the next label
+      instead, so a description written as one long line still yields one field
+      per row rather than the whole Specifications block.
+    endcomment
+    assign stop_labels = 'Dimensions:,Specifications:,Specification:,Material:,Colour:,Color:,Design:,Style:,Assembly:,Care:,Weight:,dimensions:,specifications:,specification:,material:,colour:,color:,design:,style:,assembly:,care:,weight:' | split: ','
+
+    assign label_list = labels | split: ','
+    for label in label_list
+      if result == blank
+        assign needle = label | strip | downcase | append: ':'
+
+        if lower contains needle
+          assign needle_size = needle | size
+          assign start = lower | split: needle | first | size | plus: needle_size
+          assign value = text | slice: start, 500
+          assign value = value | split: '~NL~' | first
+
+          for stop in stop_labels
+            assign value = value | split: stop | first
+          endfor
+
+          assign value = value | strip
+          if value != blank
+            assign result = value
+          endif
+        endif
+      endif
+    endfor
+  endif
+-%}
+{{- result -}}

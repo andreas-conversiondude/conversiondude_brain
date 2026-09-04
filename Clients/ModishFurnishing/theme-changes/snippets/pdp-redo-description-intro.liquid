@@ -1,0 +1,96 @@
+{%- doc -%}
+  Renders the intro half of a product description: everything BEFORE the first
+  "Dimensions:" heading.
+
+  The Dimensions and Specifications blocks are already shown as rows in the
+  Details & Dimensions tab, so repeating them in the Description tab is noise.
+  The cut happens here, in Liquid, on the server — the trimmed copy is what is
+  sent to the browser, so there is no flash of the old content and no layout
+  shift. The description itself is never modified: the full text stays in the
+  Shopify admin, which is what snippets/pdp-redo-description-label.liquid parses
+  the Colour and Design rows out of.
+
+  The heading is matched case-insensitively and works wherever it sits — bare
+  text, <strong>, <b> or any <h1>-<h6> — because the search runs on a
+  lower-cased copy of the raw HTML and cuts at the label itself, not at a tag.
+  A description with no "Dimensions:" heading is rendered unchanged.
+
+  @param {object} product - the product object
+
+  @example
+    {% render 'pdp-redo-description-intro', product: product %}
+{%- enddoc -%}
+{%- liquid
+  assign source = product.description
+  assign intro = source
+
+  if source != blank
+    assign lower = source | downcase
+
+    if lower contains 'dimensions:'
+      comment
+        downcase preserves length, so the offset measured on the lower-cased
+        copy slices the original HTML at exactly the same point.
+      endcomment
+      assign cut = lower | split: 'dimensions:' | first | size
+      assign intro = source | slice: 0, cut
+
+      comment
+        The cut lands in the middle of the heading's own markup, leaving an
+        opening tag with nothing after it - "<p><strong>". Peel off a tag that
+        was opened but never closed, then drop any empty wrapper it was sitting
+        in, so the intro does not end with a blank paragraph or heading that
+        would add stray space under the copy.
+      endcomment
+      for pass in (1..4)
+        assign tail = intro | split: '<' | last
+        unless tail contains '>'
+          assign dangling = '<' | append: tail
+          assign intro = intro | remove_last: dangling
+        endunless
+      endfor
+
+      assign empty_openers = '<p>,<div>,<span>,<strong>,<b>,<em>,<ul>,<ol>,<li>,<h1>,<h2>,<h3>,<h4>,<h5>,<h6>,<br>,<br/>,<br />,&nbsp;' | split: ','
+
+      for pass in (1..8)
+        assign intro = intro | strip
+        assign trimmed_this_pass = false
+
+        for opener in empty_openers
+          assign opener_size = opener | size
+          assign offset = 0 | minus: opener_size
+          assign tail = intro | slice: offset, opener_size
+
+          if tail == opener
+            assign intro = intro | remove_last: opener
+            assign trimmed_this_pass = true
+          endif
+        endfor
+
+        unless trimmed_this_pass
+          break
+        endunless
+      endfor
+
+      assign intro = intro | strip
+
+      comment
+        A description that runs the heading into the intro paragraph rather than
+        giving it its own block leaves the paragraph open. Browsers close it
+        themselves, but closing it here keeps the markup valid.
+      endcomment
+      comment
+        The sentinel matters: split drops a trailing empty string, so counting
+        closing tags on an intro that already ends in one comes back a tag
+        short, and every intro would then gain a stray closer.
+      endcomment
+      assign counted = intro | append: '~END~'
+      assign p_open = counted | split: '<p' | size | minus: 1
+      assign p_close = counted | split: '</p>' | size | minus: 1
+      if p_open > p_close
+        assign intro = intro | append: '</p>'
+      endif
+    endif
+  endif
+-%}
+{{ intro }}

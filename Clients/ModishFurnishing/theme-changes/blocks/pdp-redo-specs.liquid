@@ -1,0 +1,273 @@
+{%- comment -%}
+  PDP Redo — open spec table, replacing the four accordions.
+
+  Rows: seat height, total height, width, depth, colour, design, fabric, frame,
+  assembly. Every value resolves through snippets/pdp-redo-spec-value.liquid,
+  which reads the custom.* metafield first and falls back to parsing the product
+  description. A row whose value comes back blank is not rendered, so the table
+  never shows an empty cell.
+
+  Colour and Design have no metafield to fill in: they are read off the
+  "Colour:" / "Design:" lines of the description's Specifications block. A
+  product whose description omits a label simply loses that row.
+
+  DINING CHAIRS
+  -------------
+  Dining chairs show Total height where bar stools show Width, so the Width row
+  is suppressed for them - see snippets/pdp-redo-is-dining-chair.liquid, which
+  never claims a product that passes the bar-stool test. Bar stools are
+  unaffected and keep every row they render today.
+
+  DIMENSION DIAGRAM
+  -----------------
+  Preferred source is the custom.dimension_diagram file reference. Failing that,
+  a product media image whose alt text mentions a diagram is used, which is why
+  the alt text matters if you would rather not fill the metafield. If neither is
+  found the diagram is skipped and only the table renders.
+
+  The default template keeps its accordions; nothing here touches them.
+{%- endcomment -%}
+
+{%- liquid
+  assign product = closest.product
+  if request.visual_preview_mode and product == blank
+    assign product = collections.all.products.first
+  endif
+
+  capture seat_height
+    render 'pdp-redo-spec-value', product: product, field: 'seat_height'
+  endcapture
+  capture total_height
+    render 'pdp-redo-spec-value', product: product, field: 'total_height'
+  endcapture
+  capture spec_width
+    render 'pdp-redo-spec-value', product: product, field: 'width'
+  endcapture
+  capture spec_depth
+    render 'pdp-redo-spec-value', product: product, field: 'depth'
+  endcapture
+  capture colour
+    render 'pdp-redo-spec-value', product: product, field: 'colour'
+  endcapture
+  capture design
+    render 'pdp-redo-spec-value', product: product, field: 'design'
+  endcapture
+  capture fabric
+    render 'pdp-redo-spec-value', product: product, field: 'fabric'
+  endcapture
+  capture frame
+    render 'pdp-redo-spec-value', product: product, field: 'frame'
+  endcapture
+  capture assembly
+    render 'pdp-redo-spec-value', product: product, field: 'assembly'
+  endcapture
+
+  assign seat_height = seat_height | strip
+  assign total_height = total_height | strip
+  assign spec_width = spec_width | strip
+  assign spec_depth = spec_depth | strip
+  assign colour = colour | strip
+  assign design = design | strip
+  assign fabric = fabric | strip
+  assign frame = frame | strip
+  assign assembly = assembly | strip
+
+  comment
+    Dining chairs swap Width for Total height. Dropping the value rather than
+    the <tr> keeps the row_count guard below honest, so a dining chair whose
+    only other value is a width still hides the whole table instead of drawing
+    an empty one.
+  endcomment
+  capture is_dining_chair
+    render 'pdp-redo-is-dining-chair', product: product
+  endcapture
+  assign is_dining_chair = is_dining_chair | strip
+
+  if is_dining_chair == 'true'
+    assign spec_width = ''
+  endif
+
+  assign row_count = 0
+  assign all_values = seat_height | append: total_height | append: spec_width | append: spec_depth | append: colour | append: design | append: fabric | append: frame | append: assembly
+  if all_values != blank
+    assign row_count = 1
+  endif
+
+  comment
+    Diagram: metafield first, then an alt-text match across product media.
+  endcomment
+  assign diagram = product.metafields.custom.dimension_diagram.value
+
+  if diagram == blank
+    for media in product.media
+      if diagram == blank and media.media_type == 'image'
+        assign media_alt = media.alt | downcase
+        if media_alt contains 'dimension' or media_alt contains 'diagram' or media_alt contains 'size guide' or media_alt contains 'measurement'
+          assign diagram = media
+        endif
+      endif
+    endfor
+  endif
+-%}
+
+{%- if row_count > 0 -%}
+  <div
+    class="pdp-redo-specs spacing-style"
+    style="{% render 'spacing-style', settings: block.settings %}"
+    {{ block.shopify_attributes }}
+  >
+    {%- if block.settings.heading != blank -%}
+      <h2 class="pdp-redo-specs__heading">{{ block.settings.heading }}</h2>
+    {%- endif -%}
+
+    <table class="pdp-redo-specs__table">
+      <tbody>
+        {%- if seat_height != blank -%}
+          <tr><th scope="row">Seat height</th><td>{{ seat_height }}cm</td></tr>
+        {%- endif -%}
+        {%- if total_height != blank -%}
+          <tr><th scope="row">Total height</th><td>{{ total_height }}cm</td></tr>
+        {%- endif -%}
+        {%- if spec_width != blank -%}
+          <tr><th scope="row">Width</th><td>{{ spec_width }}cm</td></tr>
+        {%- endif -%}
+        {%- if spec_depth != blank -%}
+          <tr><th scope="row">Depth</th><td>{{ spec_depth }}cm</td></tr>
+        {%- endif -%}
+        {%- if colour != blank -%}
+          <tr><th scope="row">Colour</th><td>{{ colour }}</td></tr>
+        {%- endif -%}
+        {%- if design != blank -%}
+          <tr><th scope="row">Design</th><td>{{ design }}</td></tr>
+        {%- endif -%}
+        {%- if fabric != blank -%}
+          <tr><th scope="row">Fabric</th><td>{{ fabric }}</td></tr>
+        {%- endif -%}
+        {%- if frame != blank -%}
+          <tr><th scope="row">Frame</th><td>{{ frame }}</td></tr>
+        {%- endif -%}
+        {%- if assembly != blank -%}
+          <tr><th scope="row">Assembly</th><td>{{ assembly }}</td></tr>
+        {%- endif -%}
+      </tbody>
+    </table>
+
+    {%- if diagram != blank -%}
+      {%- comment -%}
+        Resolve alt first: a `| default:` inside image_tag's argument list ends
+        the filter and swallows every argument after it.
+      {%- endcomment -%}
+      {%- assign diagram_fallback_alt = product.title | append: ' dimensions' -%}
+      {%- assign diagram_alt = diagram.alt | default: diagram_fallback_alt -%}
+      <div class="pdp-redo-specs__diagram">
+        {%- if diagram.media_type == 'image' -%}
+          {{
+            diagram.preview_image
+            | image_url: width: 900
+            | image_tag:
+              loading: 'lazy',
+              widths: '400, 600, 900',
+              sizes: '(min-width: 750px) 45vw, 100vw',
+              alt: diagram_alt
+          }}
+        {%- else -%}
+          {{
+            diagram
+            | image_url: width: 900
+            | image_tag:
+              loading: 'lazy',
+              widths: '400, 600, 900',
+              sizes: '(min-width: 750px) 45vw, 100vw',
+              alt: diagram_alt
+          }}
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+  </div>
+{%- endif -%}
+
+{% stylesheet %}
+  .pdp-redo-specs {
+    width: 100%;
+  }
+
+  .pdp-redo-specs__heading {
+    margin: 0 0 10px;
+    font-family: var(--font-heading--family);
+    font-size: 17px;
+    font-weight: 500;
+  }
+
+  .pdp-redo-specs__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .pdp-redo-specs__table tr {
+    border-block-end: 1px solid var(--color-border, #e3e0da);
+  }
+
+  .pdp-redo-specs__table th,
+  .pdp-redo-specs__table td {
+    padding: 9px 0;
+    text-align: left;
+    font-weight: 400;
+    color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.72);
+  }
+
+  .pdp-redo-specs__table td {
+    text-align: right;
+    font-weight: 500;
+    color: var(--color-foreground, #111);
+  }
+
+  .pdp-redo-specs__diagram {
+    margin-block-start: 12px;
+    border: 1px solid var(--color-border, #e3e0da);
+    background: var(--color-background, #fff);
+  }
+
+  .pdp-redo-specs__diagram img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  @media screen and (min-width: 750px) {
+    .pdp-redo-specs__heading {
+      font-size: 19px;
+    }
+
+    .pdp-redo-specs__table {
+      font-size: 13px;
+    }
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "PDP Redo spec table",
+  "tag": null,
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Always-visible spec table with the dimension diagram underneath. Values read the custom.* metafields and fall back to the product description; Colour and Design are read from the description only. Blank values drop their row. Dining chairs show Total height in place of Width."
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Dimensions & details"
+    },
+    { "type": "header", "content": "t:content.padding" },
+    { "type": "range", "id": "padding-block-start", "label": "t:settings.top", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 8 },
+    { "type": "range", "id": "padding-block-end", "label": "t:settings.bottom", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 8 },
+    { "type": "range", "id": "padding-inline-start", "label": "t:settings.left", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 },
+    { "type": "range", "id": "padding-inline-end", "label": "t:settings.right", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 0 }
+  ],
+  "presets": [
+    { "name": "PDP Redo spec table", "category": "Product" }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,170 @@
+--- a/blocks/pdp-redo-specs.liquid	2026-09-02 17:07:20.000000000 +0000
++++ b/blocks/pdp-redo-specs.liquid	2026-09-04 15:19:16.795034728 +0000
+@@ -1,11 +1,22 @@
+ {%- comment -%}
+   PDP Redo — open spec table, replacing the four accordions.
+ 
+-  Rows: seat height, total height, width, depth, fabric, frame, assembly.
+-  Every value resolves through snippets/pdp-redo-spec-value.liquid, which reads
+-  the custom.* metafield first and falls back to parsing the product description.
+-  A row whose value comes back blank is not rendered, so the table never shows
+-  an empty cell.
++  Rows: seat height, total height, width, depth, colour, design, fabric, frame,
++  assembly. Every value resolves through snippets/pdp-redo-spec-value.liquid,
++  which reads the custom.* metafield first and falls back to parsing the product
++  description. A row whose value comes back blank is not rendered, so the table
++  never shows an empty cell.
++
++  Colour and Design have no metafield to fill in: they are read off the
++  "Colour:" / "Design:" lines of the description's Specifications block. A
++  product whose description omits a label simply loses that row.
++
++  DINING CHAIRS
++  -------------
++  Dining chairs show Total height where bar stools show Width, so the Width row
++  is suppressed for them - see snippets/pdp-redo-is-dining-chair.liquid, which
++  never claims a product that passes the bar-stool test. Bar stools are
++  unaffected and keep every row they render today.
+ 
+   DIMENSION DIAGRAM
+   -----------------
+@@ -35,6 +46,12 @@
+   capture spec_depth
+     render 'pdp-redo-spec-value', product: product, field: 'depth'
+   endcapture
++  capture colour
++    render 'pdp-redo-spec-value', product: product, field: 'colour'
++  endcapture
++  capture design
++    render 'pdp-redo-spec-value', product: product, field: 'design'
++  endcapture
+   capture fabric
+     render 'pdp-redo-spec-value', product: product, field: 'fabric'
+   endcapture
+@@ -49,12 +66,29 @@
+   assign total_height = total_height | strip
+   assign spec_width = spec_width | strip
+   assign spec_depth = spec_depth | strip
++  assign colour = colour | strip
++  assign design = design | strip
+   assign fabric = fabric | strip
+   assign frame = frame | strip
+   assign assembly = assembly | strip
+ 
++  comment
++    Dining chairs swap Width for Total height. Dropping the value rather than
++    the <tr> keeps the row_count guard below honest, so a dining chair whose
++    only other value is a width still hides the whole table instead of drawing
++    an empty one.
++  endcomment
++  capture is_dining_chair
++    render 'pdp-redo-is-dining-chair', product: product
++  endcapture
++  assign is_dining_chair = is_dining_chair | strip
++
++  if is_dining_chair == 'true'
++    assign spec_width = ''
++  endif
++
+   assign row_count = 0
+-  assign all_values = seat_height | append: total_height | append: spec_width | append: spec_depth | append: fabric | append: frame | append: assembly
++  assign all_values = seat_height | append: total_height | append: spec_width | append: spec_depth | append: colour | append: design | append: fabric | append: frame | append: assembly
+   if all_values != blank
+     assign row_count = 1
+   endif
+@@ -100,6 +134,12 @@
+         {%- if spec_depth != blank -%}
+           <tr><th scope="row">Depth</th><td>{{ spec_depth }}cm</td></tr>
+         {%- endif -%}
++        {%- if colour != blank -%}
++          <tr><th scope="row">Colour</th><td>{{ colour }}</td></tr>
++        {%- endif -%}
++        {%- if design != blank -%}
++          <tr><th scope="row">Design</th><td>{{ design }}</td></tr>
++        {%- endif -%}
+         {%- if fabric != blank -%}
+           <tr><th scope="row">Fabric</th><td>{{ fabric }}</td></tr>
+         {%- endif -%}
+@@ -212,7 +252,7 @@
+   "settings": [
+     {
+       "type": "paragraph",
+-      "content": "Always-visible spec table with the dimension diagram underneath. Values read the custom.* metafields and fall back to the product description. Blank values drop their row."
++      "content": "Always-visible spec table with the dimension diagram underneath. Values read the custom.* metafields and fall back to the product description; Colour and Design are read from the description only. Blank values drop their row. Dining chairs show Total height in place of Width."
+     },
+     {
+       "type": "text",
+--- a/snippets/pdp-redo-spec-value.liquid	2026-09-02 17:07:20.000000000 +0000
++++ b/snippets/pdp-redo-spec-value.liquid	2026-09-04 15:18:05.133181998 +0000
+@@ -8,6 +8,9 @@
+   @param {string} field - one of:
+       seat_height | total_height | width | depth   -> a bare number in cm ("65")
+       fabric | frame | assembly                    -> a display string
++      colour | design                              -> a display string, read
++        straight off the description's "Colour:" / "Design:" line via
++        snippets/pdp-redo-description-label.liquid (no metafield entry needed)
+ 
+   Metafields read (all under the "custom" namespace, all optional):
+       custom.seat_height    number / single line text
+@@ -17,6 +20,8 @@
+       custom.fabric         single line text
+       custom.frame          single line text
+       custom.assembly       single line text
++      custom.colour         single line text  (custom.color also accepted)
++      custom.design         single line text
+ 
+   DESCRIPTION FALLBACK
+   --------------------
+@@ -64,14 +69,39 @@
+       assign result = product.metafields.custom.frame.value
+     when 'assembly'
+       assign result = product.metafields.custom.assembly.value
++    when 'colour'
++      assign result = product.metafields.custom.colour.value | default: product.metafields.custom.color.value
++    when 'design'
++      assign result = product.metafields.custom.design.value
+   endcase
+ 
+   assign result = result | default: '' | strip
+ 
+   if result == blank
+     comment
+-      2. Description fallback. One lower-cased, tag-free copy reused by every
+-      field so the description is only walked once.
++      2a. Colour and Design are read verbatim off their own line in the
++      description's Specifications block, so they keep the copywriter's casing
++      and punctuation. They are handled before the lower-cased scan below
++      because that copy would destroy the casing.
++    endcomment
++    if field == 'colour'
++      capture result
++        render 'pdp-redo-description-label', product: product, labels: 'colour,color'
++      endcapture
++      assign result = result | strip
++    elsif field == 'design'
++      capture result
++        render 'pdp-redo-description-label', product: product, labels: 'design'
++      endcapture
++      assign result = result | strip
++    endif
++  endif
++
++  if result == blank
++    comment
++      2b. Description fallback for the remaining fields. One lower-cased,
++      tag-free copy reused by every field so the description is only walked
++      once.
+     endcomment
+     assign hay = product.description | strip_html | downcase
+ 
+--- a/templates/product.pdp-redo.json	2026-09-02 17:07:24.000000000 +0000
++++ b/templates/product.pdp-redo.json	2026-09-04 15:19:29.223838041 +0000
+@@ -987,7 +987,7 @@
+                       "type": "custom-liquid",
+                       "name": "Description Content",
+                       "settings": {
+-                        "custom_liquid": "{% assign d = product.description %}{% assign p = d | split: '<span>|</span>' %}{% if p.size < 2 %}{% assign p = d | split: '<span>| </span>' %}{% endif %}{% if p.size < 2 %}{% assign p = d | split: '<strong>|</strong>' %}{% endif %}{% if p.size < 2 %}{% assign p = d | split: '<b>|</b>' %}{% endif %}{% if p.size < 2 %}{% assign p = d | split: '<p>|</p>' %}{% endif %}{% if p.size < 2 %}{% assign p = d | split: '<p> | </p>' %}{% endif %}{% assign hs = '1,2,3,4,5,6' | split: ',' %}{% for n in hs %}{% if p.size < 2 %}{% assign sep = '<h' | append: n | append: '>| </h' | append: n | append: '>' %}{% assign p = d | split: sep %}{% endif %}{% if p.size < 2 %}{% assign sep = '<h' | append: n | append: '>|</h' | append: n | append: '>' %}{% assign p = d | split: sep %}{% endif %}{% endfor %}{{ p[0] }}"
++                        "custom_liquid": "{% render 'pdp-redo-description-intro', product: product %}"
+                       },
+                       "blocks": {}
+                     }
