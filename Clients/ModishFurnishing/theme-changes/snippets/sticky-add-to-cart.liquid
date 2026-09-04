@@ -1,0 +1,319 @@
+{%- doc -%}
+  Renders a sticky/floating bar on mobile (≤749px) with price and an “add to cart” control.
+  The control is type="button" and only scrolls to the real product form add-to-cart button (it does not submit the form).
+  The bar appears when that main button is outside the visible area (accounting for header and this bar).
+
+  @param {object} product - The product object.
+  @param {string} section_id - Reserved for future use (form association).
+{%- enddoc -%}
+
+{%- liquid
+  assign variant = product.selected_or_first_available_variant
+  assign inventory_quantity = variant.inventory_quantity
+  assign inventory_policy = variant.inventory_policy
+
+  if variant.inventory_management == 'shopify'
+    assign inventory_managed = true
+  endif
+
+  if variant.quantity_rule.min > variant.inventory_quantity and inventory_managed and inventory_policy == 'deny'
+    assign quantity_rule_soldout = true
+  endif
+
+  if inventory_managed
+    if inventory_quantity <= 0 and inventory_policy == 'deny' or quantity_rule_soldout
+      assign can_add_to_cart = false
+      assign add_to_cart_text = 'products.product.sold_out' | t
+    else
+      assign can_add_to_cart = true
+      assign add_to_cart_text = 'products.product.add_to_cart' | t
+    endif
+  else
+    if product.selected_or_first_available_variant != null
+      assign can_add_to_cart = true
+      assign add_to_cart_text = 'products.product.add_to_cart' | t
+    else
+      assign can_add_to_cart = false
+      assign add_to_cart_text = 'products.product.unavailable' | t
+    endif
+  endif
+-%}
+
+<sticky-add-to-cart class="sticky-add-to-cart color-{{ settings.drawer_color_scheme }}">
+  <div class="sticky-add-to-cart__inner">
+    <div class="sticky-add-to-cart__info">
+      <span class="sticky-add-to-cart__title">{{ product.title | truncate: 30 }}</span>
+      <div class="sticky-add-to-cart__price">
+        {%- if variant.compare_at_price > variant.price -%}
+          <span class="sticky-add-to-cart__price--sale">{{ variant.price | money }}</span>
+          <span class="sticky-add-to-cart__price--compare">{{ variant.compare_at_price | money }}</span>
+        {%- else -%}
+          <span>{{ variant.price | money }}</span>
+        {%- endif -%}
+      </div>
+    </div>
+    <div class="sticky-add-to-cart__button-wrapper">
+      <button
+        type="button"
+        class="button sticky-add-to-cart__button"
+        data-sticky-add-to-cart-trigger
+        aria-label="{{ 'accessibility.scroll_to' | t: title: add_to_cart_text }}"
+      >
+        <span class="svg-wrapper sticky-add-to-cart__icon">
+          {{- 'icon-add-to-cart.svg' | inline_asset_content -}}
+        </span>
+        <span class="sticky-add-to-cart__button-text">{{ add_to_cart_text }}</span>
+      </button>
+    </div>
+  </div>
+</sticky-add-to-cart>
+
+<script>
+  class StickyAddToCart extends HTMLElement {
+    constructor() {
+      super();
+      this.mainButton = null;
+      this.observer = null;
+      this.button = this.querySelector('[data-sticky-add-to-cart-trigger]');
+      this._onClick = this.handleClick.bind(this);
+      this._onResize = this.handleResize.bind(this);
+    }
+
+    connectedCallback() {
+      // Only activate on mobile
+      if (window.innerWidth >= 750) {
+        this.style.display = 'none';
+        return;
+      }
+
+      this.findMainButton();
+      this.setupObserver();
+      this.button?.addEventListener('click', this._onClick);
+      window.addEventListener('resize', this._onResize);
+      this.setupDrawerObserver();
+    }
+
+    disconnectedCallback() {
+      this.observer?.disconnect();
+      this.drawerObserver?.disconnect();
+      this.cartObserver?.disconnect();
+      this.button?.removeEventListener('click', this._onClick);
+      window.removeEventListener('resize', this._onResize);
+    }
+
+    setupDrawerObserver() {
+      // Watch for menu drawer details element opening
+      const menuDetails = document.querySelector('#Details-menu-drawer-container, .menu-drawer-container');
+      const cartDrawer = document.querySelector('cart-drawer');
+      
+      if (menuDetails) {
+        this.drawerObserver = new MutationObserver(() => {
+          if (menuDetails.hasAttribute('open')) {
+            this.style.visibility = 'hidden';
+            this.style.opacity = '0';
+            this.style.pointerEvents = 'none';
+          } else {
+            this.style.visibility = '';
+            this.style.opacity = '';
+            this.style.pointerEvents = '';
+          }
+        });
+        
+        this.drawerObserver.observe(menuDetails, {
+          attributes: true,
+          attributeFilter: ['open']
+        });
+      }
+
+      // Also watch cart drawer
+      if (cartDrawer) {
+        this.cartObserver = new MutationObserver(() => {
+          if (cartDrawer.hasAttribute('open')) {
+            this.style.visibility = 'hidden';
+            this.style.opacity = '0';
+            this.style.pointerEvents = 'none';
+          } else if (!menuDetails?.hasAttribute('open')) {
+            this.style.visibility = '';
+            this.style.opacity = '';
+            this.style.pointerEvents = '';
+          }
+        });
+        
+        this.cartObserver.observe(cartDrawer, {
+          attributes: true,
+          attributeFilter: ['open']
+        });
+      }
+    }
+
+    findMainButton() {
+      // Find the main product form's add-to-cart button
+      this.mainButton = document.querySelector('.buy-buttons-block .add-to-cart-button, .buy-buttons-block button[name="add"]');
+    }
+
+    setupObserver() {
+      if (!this.mainButton) return;
+
+      this.observer?.disconnect();
+      this.observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              this.classList.remove('is-visible');
+            } else {
+              this.classList.add('is-visible');
+            }
+          });
+        },
+        {
+          threshold: 0,
+          // Top: clear sticky header; bottom: area covered by this bar so we don’t hide it while the real button is still behind the bar
+          rootMargin: '-72px 0px -104px 0px'
+        }
+      );
+
+      this.observer.observe(this.mainButton);
+    }
+
+    handleClick(event) {
+      event.preventDefault();
+      if (!this.mainButton) {
+        this.findMainButton();
+      }
+      if (this.mainButton) {
+        this.mainButton.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.setTimeout(() => {
+          try {
+            this.mainButton.focus({ preventScroll: true });
+          } catch (_) {}
+        }, 450);
+      }
+    }
+
+    handleResize() {
+      if (window.innerWidth >= 750) {
+        this.style.display = 'none';
+        this.classList.remove('is-visible');
+        this.observer?.disconnect();
+        this.observer = null;
+      } else {
+        this.style.display = '';
+        this.findMainButton();
+        this.setupObserver();
+      }
+    }
+  }
+
+  if (!customElements.get('sticky-add-to-cart')) {
+    customElements.define('sticky-add-to-cart', StickyAddToCart);
+  }
+</script>
+
+<style>
+  .sticky-add-to-cart {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    transform: translateY(100%);
+    transition: transform 0.3s ease-out;
+    background-color: var(--color-background);
+    box-shadow: 0 -2px 10px rgb(0 0 0 / 10%);
+    padding: var(--padding-md) var(--padding-lg);
+    padding-bottom: calc(var(--padding-md) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .sticky-add-to-cart.is-visible {
+    transform: translateY(0);
+  }
+
+  .sticky-add-to-cart__inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--gap-md);
+    max-width: 100%;
+  }
+
+  .sticky-add-to-cart__info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .sticky-add-to-cart__title {
+    font-size: var(--font-size--sm);
+    font-weight: 500;
+    color: var(--color-foreground);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .sticky-add-to-cart__price {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-xs);
+    font-size: var(--font-size--md);
+    font-weight: 600;
+    color: var(--color-foreground);
+  }
+
+  /* Same colour as a regular price - see .price--on-sale in base.css. */
+  .sticky-add-to-cart__price--sale {
+    color: inherit;
+  }
+
+  .sticky-add-to-cart__price--compare {
+    font-size: var(--font-size--sm);
+    font-weight: 400;
+    text-decoration: line-through;
+    opacity: 0.6;
+  }
+
+  .sticky-add-to-cart__button-wrapper {
+    flex-shrink: 0;
+  }
+
+  .sticky-add-to-cart__button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--gap-xs);
+    padding: var(--padding-md) var(--padding-xl);
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .sticky-add-to-cart__icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .sticky-add-to-cart__icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .sticky-add-to-cart__button-text {
+    font-size: var(--font-size--sm);
+  }
+
+  /* Hide on desktop */
+  @media screen and (min-width: 750px) {
+    .sticky-add-to-cart {
+      display: none !important;
+    }
+  }
+
+  @media screen and (max-width: 749px) {
+    .buy-buttons-block button[name='add'],
+    .buy-buttons-block .add-to-cart-button {
+      scroll-margin-top: 100px;
+    }
+  }
+
+</style>
