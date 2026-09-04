@@ -4,16 +4,22 @@
 
   The Dimensions and Specifications blocks are already shown as rows in the
   Details & Dimensions tab, so repeating them in the Description tab is noise.
-  The cut happens here, in Liquid, on the server — the trimmed copy is what is
+  The cut happens here, in Liquid, on the server - the trimmed copy is what is
   sent to the browser, so there is no flash of the old content and no layout
   shift. The description itself is never modified: the full text stays in the
   Shopify admin, which is what snippets/pdp-redo-description-label.liquid parses
   the Colour and Design rows out of.
 
-  The heading is matched case-insensitively and works wherever it sits — bare
-  text, <strong>, <b> or any <h1>-<h6> — because the search runs on a
+  The heading is matched case-insensitively and works wherever it sits - bare
+  text, <strong>, <b> or any <h1>-<h6> - because the search runs on a
   lower-cased copy of the raw HTML and cuts at the label itself, not at a tag.
-  A description with no "Dimensions:" heading is rendered unchanged.
+  A description with no "Dimensions:" heading keeps all of its copy.
+
+  Whatever is left at the end is then peeled off - after a cut or not - so the
+  intro always ends on
+  the last line of visible text: no empty paragraph, no half-open heading, and
+  no blockquote or table shell left holding a border that would show up under
+  the copy as a stray line. Images and other embedded media are kept.
 
   @param {object} product - the product object
 
@@ -36,11 +42,9 @@
       assign intro = source | slice: 0, cut
 
       comment
-        The cut lands in the middle of the heading's own markup, leaving an
-        opening tag with nothing after it - "<p><strong>". Peel off a tag that
-        was opened but never closed, then drop any empty wrapper it was sitting
-        in, so the intro does not end with a blank paragraph or heading that
-        would add stray space under the copy.
+        The cut can land inside a tag that was still being written out, leaving
+        something like "<h3 class=" with no closing bracket. Peel that off first
+        so the trailing markup below is always made of whole tags.
       endcomment
       for pass in (1..4)
         assign tail = intro | split: '<' | last
@@ -49,47 +53,149 @@
           assign intro = intro | remove_last: dangling
         endunless
       endfor
+    endif
 
-      assign empty_openers = '<p>,<div>,<span>,<strong>,<b>,<em>,<ul>,<ol>,<li>,<h1>,<h2>,<h3>,<h4>,<h5>,<h6>,<br>,<br/>,<br />,&nbsp;' | split: ','
+    comment
+      Now walk backwards from the end and drop everything that renders
+      nothing. Two shapes turn up:
 
-      for pass in (1..8)
-        assign intro = intro | strip
-        assign trimmed_this_pass = false
+        - a tag that was opened and never filled - "<p>", "<span style=...>",
+          "<br />" - which has nothing after it at all, so it goes;
+        - an element that closes with no text in it - "<p></p>", an empty
+          blockquote, a table shell - found by matching the closing tag back
+          to the last opener of the same name and checking that what sits
+          between them reads as blank.
 
-        for opener in empty_openers
-          assign opener_size = opener | size
-          assign offset = 0 | minus: opener_size
-          assign tail = intro | slice: offset, opener_size
+      Judging by what an element renders rather than by a list of tag names is
+      what keeps this working on markup nobody has seen yet: an empty
+      blockquote or table cell still carries the theme's borders and appears
+      under the copy as a stray line, and because each pass removes one
+      element, nested shells unwind from the outside in on their own.
 
-          if tail == opener
-            assign intro = intro | remove_last: opener
-            assign trimmed_this_pass = true
-          endif
-        endfor
+      Anything holding media is left alone - an intro is allowed to end on an
+      image.
+    endcomment
+    assign media_tags = '<img,<iframe,<video,<audio,<source,<picture,<svg,<canvas,<object,<embed' | split: ','
+    assign blank_tails = '&nbsp;,&#160;,&#xa0;,&#xA0;, ' | split: ','
 
-        unless trimmed_this_pass
-          break
-        endunless
-      endfor
-
+    for pass in (1..40)
       assign intro = intro | strip
 
       comment
-        A description that runs the heading into the intro paragraph rather than
-        giving it its own block leaves the paragraph open. Browsers close it
-        themselves, but closing it here keeps the markup valid.
+        Hard spaces survive strip, and a paragraph made of them is still an
+        empty paragraph.
       endcomment
-      comment
-        The sentinel matters: split drops a trailing empty string, so counting
-        closing tags on an intro that already ends in one comes back a tag
-        short, and every intro would then gain a stray closer.
-      endcomment
-      assign counted = intro | append: '~END~'
-      assign p_open = counted | split: '<p' | size | minus: 1
-      assign p_close = counted | split: '</p>' | size | minus: 1
-      if p_open > p_close
-        assign intro = intro | append: '</p>'
+      for blank_tail in blank_tails
+        assign blank_size = blank_tail | size
+        assign blank_offset = 0 | minus: blank_size
+        assign seen = intro | slice: blank_offset, blank_size
+        if seen == blank_tail
+          assign intro = intro | remove_last: blank_tail
+          assign intro = intro | strip
+        endif
+      endfor
+
+      if intro == blank
+        break
       endif
+
+      assign last_char = intro | slice: -1
+      unless last_char == '>'
+        break
+      endunless
+
+      assign inner = intro | split: '<' | last
+      assign tag = '<' | append: inner
+      assign name = inner | split: '>' | first | replace: '/', '' | split: ' ' | first | downcase
+      assign is_closer = inner | slice: 0, 1
+
+      unless is_closer == '/'
+        comment
+          An opening or void tag at the very end has nothing to show.
+        endcomment
+        assign intro = intro | remove_last: tag
+        continue
+      endunless
+
+      comment
+        Locate the opener this closer belongs to. Both spellings are
+        measured - "<p>" and "<p " - and the later one wins, so a tag with
+        attributes is found and "<p" never matches "<picture". The position
+        is the length of the string minus everything that follows the last
+        occurrence, which is how you get a last-index-of out of split.
+      endcomment
+      assign intro_size = intro | size
+      assign open_plain = '<' | append: name | append: '>'
+      assign open_attr = '<' | append: name | append: ' '
+      assign open_at = -1
+
+      assign chunks = intro | split: open_plain
+      assign chunk_count = chunks | size
+      if chunk_count > 1
+        assign rest = chunks | last
+        assign rest_size = rest | size
+        assign open_size = open_plain | size
+        assign open_at = intro_size | minus: rest_size | minus: open_size
+      endif
+
+      assign chunks = intro | split: open_attr
+      assign chunk_count = chunks | size
+      if chunk_count > 1
+        assign rest = chunks | last
+        assign rest_size = rest | size
+        assign open_size = open_attr | size
+        assign attr_at = intro_size | minus: rest_size | minus: open_size
+        if attr_at > open_at
+          assign open_at = attr_at
+        endif
+      endif
+
+      if open_at < 0
+        break
+      endif
+
+      assign element = intro | slice: open_at, intro_size
+
+      assign holds_media = false
+      for media_tag in media_tags
+        if element contains media_tag
+          assign holds_media = true
+        endif
+      endfor
+      if holds_media
+        break
+      endif
+
+      assign element_text = element | strip_html
+      for blank_tail in blank_tails
+        assign element_text = element_text | replace: blank_tail, ' '
+      endfor
+      assign element_text = element_text | strip
+
+      if element_text == blank
+        assign intro = intro | slice: 0, open_at
+      else
+        break
+      endif
+    endfor
+
+    assign intro = intro | strip
+
+    comment
+      A description that runs the heading into the intro paragraph rather than
+      giving it its own block leaves the paragraph open. Browsers close it
+      themselves, but closing it here keeps the markup valid.
+    endcomment
+    comment
+      The sentinel matters: split drops a trailing empty string, so counting
+      closing tags on an intro that already ends in one comes back a tag
+      short, and every intro would then gain a stray closer.
+    endcomment
+    assign counted = intro | append: '~END~'
+    assign p_open = counted | split: '<p' | size | minus: 1
+    assign p_close = counted | split: '</p>' | size | minus: 1
+    if p_open > p_close
+      assign intro = intro | append: '</p>'
     endif
   endif
 -%}

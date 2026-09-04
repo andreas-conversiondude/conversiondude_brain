@@ -157,3 +157,30 @@ Verified against 12 markup shapes: plain label, entity nbsp, literal nbsp, plain
 space before colon, colon outside the bold tag, value on the next line, label in
 its own paragraph, American spelling, plural label, list-item markup, nbsp
 inside the value, and no label at all (correctly blank).
+
+## Stray line under the Description copy (same day)
+
+The Description tab ended with a short vertical black line below the last line
+of text. That is markup with no text in it - the empty element the cut left
+behind, or one that was already sitting at the end of the description - still
+carrying the theme's border or padding.
+
+`snippets/pdp-redo-description-intro.liquid` no longer works from a list of tag
+names. It now sweeps the end of the intro and drops anything that renders
+nothing:
+
+- a tag that was opened and never filled (`<p>`, `<span style=...>`, `<br />`)
+- an element that closes with no text in it - the closing tag is matched back to
+  the last opener of the same name and the element between them is checked with
+  `strip_html`, so an empty paragraph, blockquote or whole table shell goes,
+  however deeply nested
+
+Each pass removes one element, so nested shells unwind on their own. Media is
+left alone: an intro may end on an image. The sweep now runs on every
+description, not only ones that were cut at "Dimensions:", so a stray empty
+element that was always in the description is removed too.
+
+Verified against 20 shapes, including an empty paragraph, an nbsp-only
+paragraph, a blockquote shell, a table shell, trailing `<hr>` and `<br>`,
+stacked empty spans, and the same cases with no "Dimensions:" heading at all.
+Theme-check clean.
