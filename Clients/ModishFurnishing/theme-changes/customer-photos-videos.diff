@@ -1,0 +1,323 @@
+--- a/sections/pdp-redo-customer-photos.liquid	2026-09-02 17:07:20.000000000 +0000
++++ b/sections/pdp-redo-customer-photos.liquid	2026-09-03 15:40:31.585650498 +0000
+@@ -9,8 +9,11 @@
+ 
+   Metafields (create these definitions in the admin, both on Product):
+ 
+-      custom.customer_photos      File -> list of files (Image)
+-          The photos themselves. No images = nothing renders.
++      custom.customer_photos      File -> list of files (Image and Video)
++          The media itself - images and videos both render. Empty = nothing
++          renders. Videos need to be picked from Content > Files; they play
++          muted and looped once scrolled into view and pause again on the way
++          out, so a strip of them costs nothing until it is actually seen.
+ 
+       custom.show_customer_photos  True or false
+           Manual override. false hides the section even when photos are
+@@ -18,8 +21,10 @@
+           and products that predate this toggle are unaffected — the switch only
+           ever suppresses, it never forces an empty section to appear.
+ 
+-  A file_reference list returns image objects for image files. Non-image files
+-  (a stray PDF, say) have no width and are skipped rather than rendered broken.
++  A file_reference list hands back a different Liquid object per file type, so
++  snippets/pdp-redo-customer-media-kind.liquid classifies each entry. Anything
++  that is neither an image nor a video (a stray PDF, say) is skipped rather than
++  rendered broken.
+ 
+   Horizontal scroll with snap on every breakpoint — the row is meant to read as
+   a strip you push through, and 92% of this store's traffic is mobile.
+@@ -41,12 +46,21 @@
+ 
+   assign photos = product.metafields.custom.customer_photos.value
+   assign photo_count = 0
++  assign has_video = false
+ 
+   if is_hidden == false and photos != blank
+     for photo in photos
+-      if photo.width
++      capture photo_kind
++        render 'pdp-redo-customer-media-kind', media: photo
++      endcapture
++      assign photo_kind = photo_kind | strip
++
++      unless photo_kind == ''
+         assign photo_count = photo_count | plus: 1
+-      endif
++        if photo_kind != 'image'
++          assign has_video = true
++        endif
++      endunless
+     endfor
+   endif
+ -%}
+@@ -70,33 +84,160 @@
+ 
+     <ul class="pdp-redo-photos__row" role="list">
+       {%- for photo in photos -%}
+-        {%- if photo.width -%}
+-          {%- comment -%}
++        {%- liquid
++          capture photo_kind
++            render 'pdp-redo-customer-media-kind', media: photo
++          endcapture
++          assign photo_kind = photo_kind | strip
++
++          comment
+             alt is resolved into a variable first on purpose. Writing
+             `alt: photo.alt | default: ...` inside the argument list ends the
+             image_tag filter and starts a `default` filter instead, which
+             silently swallowed the class and alt arguments — the images rendered
+             with no class at all, so the 1:1 crop never applied.
+-          {%- endcomment -%}
+-          {%- assign photo_alt = photo.alt | default: section.settings.title -%}
+-          <li class="pdp-redo-photos__item">
+-            {{
+-              photo
+-              | image_url: width: 720
+-              | image_tag:
+-                loading: 'lazy',
+-                widths: '180, 270, 360, 540, 720',
+-                sizes: '(min-width: 750px) 220px, 40vw',
+-                alt: photo_alt,
+-                class: 'pdp-redo-photos__img'
+-            }}
+-          </li>
+-        {%- endif -%}
++          endcomment
++          assign photo_alt = photo.alt | default: section.settings.title
++        -%}
++
++        {%- case photo_kind -%}
++          {%- when 'image' -%}
++            <li class="pdp-redo-photos__item">
++              {{
++                photo
++                | image_url: width: 720
++                | image_tag:
++                  loading: 'lazy',
++                  widths: '180, 270, 360, 540, 720',
++                  sizes: '(min-width: 750px) 220px, 40vw',
++                  alt: photo_alt,
++                  class: 'pdp-redo-photos__img'
++              }}
++            </li>
++
++          {%- when 'video' -%}
++            {%- comment -%}
++              Shopify supplies the cover frame and an adaptive stream here. The
++              tag is asked for no autoplay and no controls; the script below
++              starts it on the way into view, so nothing downloads on load.
++            {%- endcomment -%}
++            <li class="pdp-redo-photos__item">
++              <div class="pdp-redo-photos__media" data-pdp-photo-media>
++                {{
++                  photo
++                  | video_tag:
++                    image_size: '720x',
++                    autoplay: false,
++                    loop: true,
++                    muted: true,
++                    controls: false
++                }}
++                {%- render 'pdp-redo-customer-photos-play' -%}
++              </div>
++            </li>
++
++          {%- when 'file_video' -%}
++            {%- comment -%}
++              A video that landed in Files as a plain upload rather than as a
++              Shopify video: one fixed file, no adaptive bitrate and no cover
++              frame, so keep these small.
++            {%- endcomment -%}
++            <li class="pdp-redo-photos__item">
++              <div class="pdp-redo-photos__media" data-pdp-photo-media>
++                <video muted loop playsinline preload="none" aria-label="{{ photo_alt | escape }}">
++                  <source src="{{ photo.url }}" type="video/mp4">
++                </video>
++                {%- render 'pdp-redo-customer-photos-play' -%}
++              </div>
++            </li>
++        {%- endcase -%}
+       {%- endfor -%}
+     </ul>
+   </section>
+ {%- endif -%}
+ 
++{%- if photo_count > 0 and has_video -%}
++  <script>
++    (function () {
++      var root = document.getElementById('shopify-section-' + {{ section.id | json }});
++      if (!root) return;
++
++      var mediaEls = Array.prototype.slice.call(root.querySelectorAll('[data-pdp-photo-media]'));
++      if (!mediaEls.length) return;
++
++      mediaEls.forEach(function (media) {
++        var video = media.querySelector('video');
++        if (!video) return;
++
++        // Nothing downloads until the tile is actually in view.
++        video.preload = 'none';
++        video.muted = true;
++        video.defaultMuted = true;
++        video.loop = true;
++        video.controls = false;
++        video.setAttribute('muted', '');
++        video.setAttribute('playsinline', '');
++        video.setAttribute('webkit-playsinline', '');
++        video.removeAttribute('autoplay');
++
++        video.addEventListener('playing', function () {
++          media.setAttribute('data-playing', 'true');
++        });
++        video.addEventListener('pause', function () {
++          media.removeAttribute('data-playing');
++        });
++      });
++
++      var reduceMotion =
++        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++
++      // Without autoplay the poster frame is all there is, so give those
++      // viewers controls instead of a still they cannot start.
++      if (reduceMotion || !('IntersectionObserver' in window)) {
++        mediaEls.forEach(function (media) {
++          var video = media.querySelector('video');
++          if (!video) return;
++          video.controls = true;
++          video.preload = 'metadata';
++          media.removeAttribute('data-playing');
++        });
++        return;
++      }
++
++      var observer = new IntersectionObserver(
++        function (entries) {
++          entries.forEach(function (entry) {
++            var video = entry.target.querySelector('video');
++            if (!video) return;
++
++            if (entry.isIntersecting) {
++              if (video.preload === 'none') {
++                video.preload = 'metadata';
++                video.load();
++              }
++              var attempt = video.play();
++              if (attempt && typeof attempt.catch === 'function') {
++                // Autoplay refused (a data-saver setting, say): fall back to
++                // controls rather than leaving a dead tile.
++                attempt.catch(function () {
++                  video.controls = true;
++                });
++              }
++            } else if (!video.paused) {
++              video.pause();
++            }
++          });
++        },
++        { threshold: 0.35 }
++      );
++
++      mediaEls.forEach(function (media) {
++        observer.observe(media);
++      });
++    })();
++  </script>
++{%- endif -%}
++
+ {% stylesheet %}
+   .pdp-redo-photos {
+     display: block;
+@@ -151,6 +292,51 @@
+     background-color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.04);
+   }
+ 
++  /* Videos share the 1:1 crop of the photos so the strip stays on one line. */
++  .pdp-redo-photos__media {
++    position: relative;
++    display: block;
++    width: 100%;
++    aspect-ratio: 1 / 1;
++    overflow: hidden;
++    background-color: rgb(var(--color-foreground-rgb, 0 0 0) / 0.04);
++  }
++
++  .pdp-redo-photos__media :is(video, img) {
++    display: block;
++    width: 100%;
++    height: 100%;
++    object-fit: cover;
++  }
++
++  /* video_tag wraps the element; the wrapper must not shrink the crop. */
++  .pdp-redo-photos__media .video-wrapper,
++  .pdp-redo-photos__media deferred-media {
++    display: block;
++    width: 100%;
++    height: 100%;
++  }
++
++  .pdp-redo-photos__play {
++    position: absolute;
++    inset-block-end: 6px;
++    inset-inline-start: 6px;
++    display: flex;
++    align-items: center;
++    justify-content: center;
++    width: 26px;
++    height: 26px;
++    border-radius: 50%;
++    color: #fff;
++    background-color: rgb(0 0 0 / 0.55);
++    pointer-events: none;
++    transition: opacity 0.2s ease;
++  }
++
++  .pdp-redo-photos__media[data-playing] .pdp-redo-photos__play {
++    opacity: 0;
++  }
++
+   @media screen and (min-width: 750px) {
+     .pdp-redo-photos__title {
+       font-size: 24px;
+@@ -174,7 +360,7 @@
+   "settings": [
+     {
+       "type": "paragraph",
+-      "content": "Reads custom.customer_photos (File, list of images). Renders nothing when it is empty, or when custom.show_customer_photos is set to false."
++      "content": "Reads custom.customer_photos (File, list of images and videos). Videos play muted and looped once scrolled into view. Renders nothing when the list is empty, or when custom.show_customer_photos is set to false."
+     },
+     {
+       "type": "product",
+--- a/templates/product.json	2026-09-02 17:07:24.000000000 +0000
++++ b/templates/product.json	2026-09-03 15:40:59.040485662 +0000
+@@ -1487,6 +1487,17 @@
+         "padding-block-start": 0,
+         "padding-block-end": 0
+       }
++    },
++    "pdp_redo_customer_photos": {
++      "type": "pdp-redo-customer-photos",
++      "settings": {
++        "product": "",
++        "title": "Modish in your home",
++        "subtitle": "Photos sent in by customers who own this product",
++        "color_scheme": "",
++        "padding-block-start": 24,
++        "padding-block-end": 24
++      }
+     }
+   },
+   "order": [
+@@ -1496,6 +1507,7 @@
+     "product_list_zR9Cym",
+     "1772210417497963fa",
+     "custom_liquid_Gg3EMh",
+-    "custom_liquid_QwNPF7"
++    "custom_liquid_QwNPF7",
++    "pdp_redo_customer_photos"
+   ]
+-}
+\ No newline at end of file
++}

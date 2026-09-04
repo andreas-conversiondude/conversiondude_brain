@@ -1,0 +1,307 @@
+{%- doc -%}
+  Resolves one product spec value for the PDP Redo template.
+
+  Metafield first, description parsing as a fallback, blank if neither yields
+  anything (callers hide the row / line when it comes back blank).
+
+  @param {object} product - the product object
+  @param {string} field - one of:
+      seat_height | total_height | width | depth   -> a bare number in cm ("65")
+      fabric | frame | assembly                    -> a display string
+      colour | design                              -> a display string, read
+        straight off the description's "Colour:" / "Design:" line via
+        snippets/pdp-redo-description-label.liquid (no metafield entry needed;
+        colour ignores the metafields entirely, see below)
+
+  Metafields read (all under the "custom" namespace, all optional):
+      custom.seat_height    number / single line text
+      custom.total_height   number / single line text
+      custom.width          number / single line text
+      custom.depth          number / single line text
+      custom.fabric         single line text
+      custom.frame          single line text
+      custom.assembly       single line text
+      custom.design         single line text
+
+  COLOUR IS PARSED, NEVER READ FROM A METAFIELD
+  ---------------------------------------------
+  custom.color on this store is a Color metafield, so its .value is a ColorDrop
+  and printing it renders the literal text "[ColorDrop]" instead of a colour
+  name. The Colour row therefore always comes from the description's "Colour:"
+  line, exactly like the Design row.
+
+  DESCRIPTION FALLBACK
+  --------------------
+  Product descriptions on this store carry a details half in a fixed shape:
+
+      Dimensions:
+      W55cm x D50cm x H86cm  Seat Height 65cm
+      Specifications:
+      Material: Soft velvet upholstery, durable matte black metal frame
+      Colour:   Cream (seat and backrest), Matte black (frame)
+      Assembly: Simple Assembly Required
+
+  We deliberately scan the WHOLE description rather than splitting on the "|"
+  heading that the accordions use. That separator is written as <h3>|&nbsp;</h3>
+  on at least some products (a non-breaking space), which the separator list in
+  blocks/product-description-review.liquid and the accordion custom Liquid does
+  not match — so splitting there silently yields nothing. The labels below only
+  ever appear in the details half anyway, so scanning everything is safe.
+
+  Parsing runs against a lower-cased copy because Liquid's split is
+  case-sensitive and the labels are not consistently capitalised. Numeric fields
+  are unaffected; the text fields are re-capitalised on the way out, so a parsed
+  fallback reads "Simple assembly required" rather than the original casing.
+  Populating the metafields replaces all of this with exact values.
+{%- enddoc -%}
+
+{%- liquid
+  assign result = ''
+  assign was_parsed = false
+
+  comment
+    1. Metafield wins whenever it is set.
+  endcomment
+  case field
+    when 'seat_height'
+      assign result = product.metafields.custom.seat_height.value
+    when 'total_height'
+      assign result = product.metafields.custom.total_height.value
+    when 'width'
+      assign result = product.metafields.custom.width.value
+    when 'depth'
+      assign result = product.metafields.custom.depth.value
+    when 'fabric'
+      assign result = product.metafields.custom.fabric.value
+    when 'frame'
+      assign result = product.metafields.custom.frame.value
+    when 'assembly'
+      assign result = product.metafields.custom.assembly.value
+    when 'design'
+      assign result = product.metafields.custom.design.value
+  endcase
+
+  assign result = result | default: '' | strip
+
+  if result == blank
+    comment
+      2a. Colour and Design are read verbatim off their own line in the
+      description's Specifications block, so they keep the copywriter's casing
+      and punctuation. They are handled before the lower-cased scan below
+      because that copy would destroy the casing.
+    endcomment
+    if field == 'colour'
+      capture result
+        render 'pdp-redo-description-label', product: product, labels: 'colour,color,colours,colors'
+      endcapture
+      assign result = result | strip
+      assign was_parsed = true
+    elsif field == 'design'
+      capture result
+        render 'pdp-redo-description-label', product: product, labels: 'design'
+      endcapture
+      assign result = result | strip
+      assign was_parsed = true
+    endif
+  endif
+
+  if result == blank
+    comment
+      2b. Description fallback for the remaining fields. One lower-cased,
+      tag-free copy reused by every field so the description is only walked
+      once.
+    endcomment
+    assign hay = product.description | strip_html | downcase
+    assign was_parsed = true
+
+    case field
+      when 'seat_height'
+        assign seat_parts = hay | split: 'seat height'
+        if seat_parts.size > 1
+          assign seat_raw = seat_parts[1] | split: 'cm' | first | replace: ':', '' | strip
+          assign seat_num = seat_raw | times: 1
+          if seat_num > 30 and seat_num < 130
+            assign result = seat_raw
+          endif
+        endif
+
+      when 'width' or 'depth' or 'total_height'
+        comment
+          The dimension line comes in two shapes across the catalogue:
+
+              W55cm x D50cm x H86cm                     (Mia)
+              Width 56cm x Depth 54cm x Height 97cm     (Camilla)
+
+          So each chunk is classified by the spelled-out word first and only
+          falls back to a single-letter prefix. Testing for the bare letter
+          first is what broke this: "width" contains an "h", so the width chunk
+          was read as the height and Camilla reported a 56cm total height under
+          a 66cm seat.
+
+          The segment is taken after the word "dimensions" (so its own letters
+          cannot be classified) and cut at "seat height" (so the seat number is
+          not read as the total height, and "Arm Rest Height 84cm", which sits
+          after it on some products, is excluded too).
+        endcomment
+        assign dim_parts = hay | split: 'dimensions'
+        if dim_parts.size > 1
+          assign dim_segment = dim_parts[1]
+          assign dim_segment = dim_segment | split: 'seat height' | first
+          assign dim_segment = dim_segment | split: 'specification' | first
+
+          assign wanted_axis = 'width'
+          if field == 'depth'
+            assign wanted_axis = 'depth'
+          elsif field == 'total_height'
+            assign wanted_axis = 'height'
+          endif
+
+          assign dim_chunks = dim_segment | split: ' x '
+          for chunk in dim_chunks
+            assign chunk_axis = ''
+
+            if chunk contains 'width'
+              assign chunk_axis = 'width'
+            elsif chunk contains 'depth'
+              assign chunk_axis = 'depth'
+            elsif chunk contains 'height'
+              assign chunk_axis = 'height'
+            elsif chunk contains 'length'
+              # Benches and tables label the long side 'Length'.
+              assign chunk_axis = 'width'
+            else
+              assign compact = chunk | remove: ':' | strip
+              if compact contains 'w'
+                assign chunk_axis = 'width'
+              elsif compact contains 'd'
+                assign chunk_axis = 'depth'
+              elsif compact contains 'h'
+                assign chunk_axis = 'height'
+              endif
+            endif
+
+            if result == blank and chunk_axis == wanted_axis
+              comment
+                Take the last whitespace-separated token before "cm", then peel
+                off any axis prefix. Handles "width 56" -> 56 and "w55" -> 55.
+              endcomment
+              assign chunk_raw = chunk | split: 'cm' | first | split: ' ' | last
+              assign chunk_raw = chunk_raw | remove: 'w' | remove: 'd' | remove: 'h' | remove: 'l' | remove: ':' | strip
+              assign chunk_num = chunk_raw | times: 1
+              if chunk_num > 10 and chunk_num < 400
+                assign result = chunk_raw
+              endif
+            endif
+          endfor
+        endif
+
+      when 'fabric'
+        assign fabric_list = 'chenille:Chenille,boucle:Bouclé,velvet:Velvet,leather:Leather,faux fur:Faux fur,linen:Linen,cotton:Cotton,wool:Wool,fabric:Fabric'
+        assign fabric_pairs = fabric_list | split: ','
+        for pair in fabric_pairs
+          if result == blank
+            assign kv = pair | split: ':'
+            assign needle = kv[0]
+            if hay contains needle
+              assign result = kv[1]
+            endif
+          endif
+        endfor
+
+      when 'frame'
+        comment
+          Composed from a finish word plus a frame material word, e.g.
+          "matte black" + "metal" -> "Matte black metal". Both halves have to be
+          found or the row stays hidden rather than guessing.
+        endcomment
+        assign finish_list = 'matte black:Matte black,brushed gold:Brushed gold,polished chrome:Polished chrome,black:Black,gold:Gold,chrome:Chrome,brass:Brass,silver:Silver,white:White,walnut:Walnut,oak:Oak'
+        assign frame_material_list = 'powder-coated metal:powder-coated metal,stainless steel:stainless steel,metal:metal,steel:steel,wood:wood'
+
+        assign frame_finish = ''
+        assign finish_pairs = finish_list | split: ','
+        for pair in finish_pairs
+          if frame_finish == blank
+            assign kv = pair | split: ':'
+            assign needle = kv[0]
+            if hay contains needle
+              assign frame_finish = kv[1]
+            endif
+          endif
+        endfor
+
+        assign frame_material = ''
+        assign frame_material_pairs = frame_material_list | split: ','
+        for pair in frame_material_pairs
+          if frame_material == blank
+            assign kv = pair | split: ':'
+            assign needle = kv[0]
+            if hay contains needle
+              assign frame_material = kv[1]
+            endif
+          endif
+        endfor
+
+        if frame_finish != blank and frame_material != blank
+          assign result = frame_finish | append: ' ' | append: frame_material
+        endif
+
+      when 'assembly'
+        comment
+          Split on the label WITH its colon. Splitting on the bare word would
+          also hit the word inside the value itself ("Assembly: Simple Assembly
+          Required") and return just "Simple". newline_to_br then gives us a
+          token to cut the line at, since Liquid cannot split on "\n".
+        endcomment
+        assign assembly_parts = hay | split: 'assembly:'
+        if assembly_parts.size > 1
+          assign assembly_raw = assembly_parts[1] | newline_to_br | split: '<br' | first | strip
+          if assembly_raw != blank
+            assign result = assembly_raw | capitalize
+          endif
+        endif
+    endcase
+  endif
+
+  comment
+    3. Every parsed text value is cut to a single clause so no row can wrap:
+    keep whatever comes before the first comma or full stop, whichever lands
+    first, and drop the punctuation with it. "Versatile design that complements
+    a variety of interiors, from contemporary to transitional" becomes
+    "Versatile design that complements a variety of interiors".
+
+    This runs outside the fallback branch on purpose: colour and design resolve
+    in step 2a, so a truncation nested inside step 2b would never see them.
+
+    Only parsed values are cut. A metafield someone typed by hand is left
+    exactly as entered, and numeric fields are excluded either way - a decimal
+    like 45.5 would be cut at its own point and report 45 - so the CSS ellipsis
+    in blocks/pdp-redo-specs.liquid is what keeps those on one line.
+  endcomment
+  assign single_line_fields = 'colour,design,fabric,frame,assembly' | split: ','
+
+  if was_parsed and result != blank and single_line_fields contains field
+    assign upto_comma = result | split: ',' | first
+    assign upto_stop = result | split: '.' | first
+    assign comma_size = upto_comma | size
+    assign stop_size = upto_stop | size
+
+    if stop_size < comma_size
+      assign result = upto_stop
+    else
+      assign result = upto_comma
+    endif
+
+    assign result = result | strip
+
+    comment
+      A single clause can still outrun the column, so it is capped here as a
+      backstop for a runaway sentence. The cap is deliberately generous: the
+      CSS ellipsis is viewport-accurate and the real guarantee of one line, so
+      a normal clause like "Versatile design that complements a variety of
+      interiors" should reach the browser intact and be clipped only where it
+      genuinely does not fit.
+    endcomment
+    assign result = result | truncate: 60, '…'
+  endif
+-%}
+{{- result -}}

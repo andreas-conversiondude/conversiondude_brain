@@ -1,0 +1,527 @@
+{% comment %}
+  PDP Redo — description preview + 3 icon badges.
+
+  Duplicated from blocks/product-description-review.liquid, which stays untouched
+  for the default template. The badge engine below is copied verbatim; the only
+  change is the gate.
+
+  GATE
+  ----
+  Bar stools do not render this block at all. On a bar stool the seat-height /
+  fit box already states the fabric, seat height and colour, so the 3-icon row
+  repeats it. Every other product type keeps the badges exactly as they are on
+  the site today.
+
+  Note: assets/base.css hides .description-preview__text and forces
+  .description-preview .product-badges to display:flex, so the visible output of
+  this block IS the badge row — the truncated description never shows. That is
+  existing live behaviour, not something introduced here.
+{% endcomment %}
+
+{% liquid
+  assign block_settings = block.settings
+  assign product = closest.product
+
+  if request.visual_preview_mode and product == blank
+    assign product = collections.all.products.first
+  endif
+
+  assign description = product.description | strip_html
+  assign truncate_length = block_settings.truncate_length | default: 150
+
+  # ===== BADGE ENGINE =====
+  assign ty = product.type | downcase
+  assign title_l = product.title | downcase
+  assign hay = product.title | append: ' ' | append: description | downcase
+
+  # isolate the "details" half after the | delimiter for dimension parsing
+  assign draw = product.description
+  assign dparts = draw | split: '<span>|</span>'
+  if dparts.size < 2
+    assign dparts = draw | split: '<span>| </span>'
+  endif
+  if dparts.size < 2
+    assign dparts = draw | split: '<strong>|</strong>'
+  endif
+  if dparts.size < 2
+    assign dparts = draw | split: '<b>|</b>'
+  endif
+  if dparts.size < 2
+    assign dparts = draw | split: '<h3>| </h3>'
+  endif
+  if dparts.size < 2
+    assign dparts = draw | split: '<p>|</p>'
+  endif
+  if dparts.size > 1
+    assign detail = dparts[1] | strip_html | downcase
+  else
+    assign detail = description | downcase
+  endif
+
+  # 1. CATEGORY GROUP
+  assign grp = 'default'
+  if ty contains 'garden'
+    assign grp = 'garden'
+  elsif ty == 'dining set' or ty contains 'sofa'
+    assign grp = 'seatset'
+  elsif ty contains 'bed'
+    assign grp = 'bed'
+  elsif ty contains 'stool'
+    assign grp = 'stool'
+  elsif ty contains 'bench'
+    assign grp = 'bench'
+  elsif ty contains 'chair'
+    assign grp = 'chair'
+  elsif ty contains 'table' or ty contains 'console'
+    assign grp = 'table'
+  elsif ty contains 'sideboard' or ty contains 'storage'
+    assign grp = 'storage'
+  elsif ty contains 'wall art' or ty contains 'mirror'
+    assign grp = 'art'
+  elsif ty contains 'rug'
+    assign grp = 'rug'
+  elsif ty contains 'cushion' or ty contains 'throw' or ty contains 'blanket'
+    assign grp = 'soft'
+  elsif ty contains 'vase' or ty contains 'ornament' or ty contains 'lamp' or ty contains 'jar' or ty contains 'tray' or ty contains 'candle' or ty contains 'clock' or ty contains 'book'
+    assign grp = 'decor'
+  endif
+  if ty == blank
+    if title_l contains 'stool'
+      assign grp = 'stool'
+    elsif title_l contains 'sofa'
+      assign grp = 'seatset'
+    elsif title_l contains 'bed'
+      assign grp = 'bed'
+    elsif title_l contains 'bench'
+      assign grp = 'bench'
+    elsif title_l contains 'table'
+      assign grp = 'table'
+    elsif title_l contains 'chair'
+      assign grp = 'chair'
+    endif
+  endif
+
+  # 2. MATERIAL (category-aware priority)
+  if grp == 'garden'
+    assign matlist = 'aluminium:Aluminium,steel:Steel,rattan:Rattan,polywood:Polywood,wicker:Wicker,metal:Metal,linen:Linen,fabric:Fabric'
+    assign matfallback = 'Premium Build'
+  elsif grp == 'table'
+    assign matlist = 'ceramic:Ceramic,travertine:Travertine,marble:Marble,glass:Glass,walnut:Walnut,oak:Oak,mango:Mango Wood,pine:Pine,wood:Solid Wood,metal:Metal,steel:Steel'
+    assign matfallback = 'Premium Build'
+  elsif grp == 'storage'
+    assign matlist = 'walnut:Walnut,oak:Oak,mango:Mango Wood,pine:Pine,wood:Solid Wood,rattan:Rattan,marble:Marble,glass:Glass,ceramic:Ceramic,metal:Metal'
+    assign matfallback = 'Premium Build'
+  elsif grp == 'soft'
+    assign matlist = 'velvet:Velvet,boucle:Bouclé,chenille:Chenille,cotton:Cotton,linen:Linen,faux fur:Faux Fur,wool:Wool'
+    assign matfallback = 'Soft Touch'
+  elsif grp == 'rug'
+    assign matlist = 'wool:Wool,cotton:Cotton'
+    assign matfallback = 'Soft Touch'
+  elsif grp == 'art' or grp == 'decor'
+    assign matlist = 'glass:Glass,ceramic:Ceramic,marble:Marble,brass:Brass,gold:Gold,metal:Metal,wood:Wood,resin:Resin,canvas:Canvas'
+    assign matfallback = 'Handcrafted'
+  else
+    assign matlist = 'velvet:Velvet,boucle:Bouclé,chenille:Chenille,leather:Leather,faux fur:Faux Fur,linen:Linen,cotton:Cotton,wool:Wool,fabric:Fabric,walnut:Walnut,oak:Oak,wood:Solid Wood,metal:Metal'
+    assign matfallback = 'Premium Build'
+  endif
+
+  assign badge_material = ''
+  assign mpairs = matlist | split: ','
+  for pair in mpairs
+    if badge_material == ''
+      assign kv = pair | split: ':'
+      assign needle = kv[0]
+      if hay contains needle
+        assign badge_material = kv[1]
+      endif
+    endif
+  endfor
+  if badge_material == ''
+    assign badge_material = matfallback
+  endif
+
+  # 3. SIZE (routed by group)
+
+  # 3a. MANUAL OVERRIDE — format 'product-handle:Label,product-handle:Label'
+  #     Wins over every rule below. Leave empty to use the automatic engine.
+  assign size_overrides = ''
+  assign badge_override = ''
+  assign opairs = size_overrides | split: ','
+  for pair in opairs
+    if badge_override == ''
+      assign okv = pair | split: ':'
+      assign ohandle = okv[0] | strip
+      if product.handle == ohandle
+        assign badge_override = okv[1] | strip
+      endif
+    endif
+  endfor
+
+  assign badge_size = ''
+  if grp == 'garden' or grp == 'seatset'
+    assign seaters = '12,10,9,8,7,6,5,4,3,2' | split: ','
+
+    # (a) TOTAL capacity first: "can seat up to 8 people" / "seats 8 people".
+    #     This has to beat the "N Seater" scan below, because on modular sets the
+    #     description lists the COMPONENT sofas ("4 Seater Sofa: Length 299cm...")
+    #     which is a part of the set, not how many people the set seats.
+    for n in seaters
+      if badge_size == ''
+        assign cap1 = 'up to ' | append: n | append: ' people'
+        assign cap2 = 'seats ' | append: n | append: ' people'
+        assign cap3 = 'seat ' | append: n | append: ' people'
+        if hay contains cap1 or hay contains cap2 or hay contains cap3
+          assign badge_size = n | append: ' Seater'
+        endif
+      endif
+    endfor
+
+    # (b) otherwise fall back to explicit "N seater" wording
+    for n in seaters
+      if badge_size == ''
+        assign phrase = n | append: ' seater'
+        if hay contains phrase
+          assign badge_size = n | append: ' Seater'
+        endif
+      endif
+    endfor
+
+    if badge_size == '' and title_l contains 'corner'
+      assign badge_size = 'Corner Sofa'
+    endif
+    if badge_size == '' and hay contains 'modular'
+      assign badge_size = 'Modular Set'
+    endif
+  elsif grp == 'stool'
+    assign shparts = detail | split: 'seat height'
+    if shparts.size > 1
+      assign shseg = shparts[1] | split: 'cm' | first
+      assign shn = shseg | split: ' ' | last | replace: ':', '' | replace: '-', '' | strip
+      assign shi = shn | times: 1
+      if shi > 40 and shi < 120
+        assign badge_size = 'Seat H ' | append: shn | append: 'cm'
+      endif
+    endif
+  elsif grp == 'bed'
+    assign has_double = false
+    assign has_king = false
+    assign has_sking = false
+    assign has_single = false
+    if hay contains 'super king'
+      assign has_sking = true
+    endif
+    if hay contains 'king'
+      assign has_king = true
+    endif
+    if hay contains 'double'
+      assign has_double = true
+    endif
+    if hay contains 'single'
+      assign has_single = true
+    endif
+    assign bsmall = ''
+    if has_single
+      assign bsmall = 'Single'
+    elsif has_double
+      assign bsmall = 'Double'
+    endif
+    assign blarge = ''
+    if has_sking
+      assign blarge = 'Super King'
+    elsif has_king
+      assign blarge = 'King'
+    endif
+    if bsmall != '' and blarge != ''
+      assign badge_size = bsmall | append: ' / ' | append: blarge
+    elsif blarge != ''
+      assign badge_size = blarge
+    elsif bsmall != ''
+      assign badge_size = bsmall
+    else
+      assign badge_size = 'Ottoman Storage'
+    endif
+  endif
+
+  # dimension fallback: first real measurement before "cm" (skip stools - width is meaningless there)
+  if badge_size == '' and grp != 'stool' and detail contains 'cm'
+    assign seg = detail | split: 'cm' | first
+    assign tok = seg | split: ' ' | last
+    assign tok = tok | replace: 'w', '' | replace: 'l', '' | replace: 'h', '' | replace: 'd', '' | replace: 'x', '' | replace: '(', '' | replace: ':', '' | replace: '~', '' | strip
+    assign cmnum = tok | times: 1
+    if cmnum > 20 and cmnum < 400
+      if grp == 'bench'
+        assign badge_size = tok | append: 'cm Long'
+      else
+        assign badge_size = tok | append: 'cm Wide'
+      endif
+    endif
+  endif
+
+  if badge_size == ''
+    case grp
+      when 'art'
+        assign badge_size = 'Statement Piece'
+      when 'soft'
+        assign badge_size = 'Soft Touch'
+      when 'rug'
+        assign badge_size = 'Large Rug'
+      when 'decor'
+        assign badge_size = 'Decorative'
+      when 'storage'
+        assign badge_size = 'Ample Storage'
+      when 'table'
+        assign badge_size = 'Seats 4-6'
+      when 'stool'
+        assign badge_size = 'Bar Height'
+      when 'bench'
+        assign badge_size = 'Spacious'
+      else
+        assign badge_size = 'Compact'
+    endcase
+  endif
+
+  # 3z. DINING CHAIRS: total height instead of width
+  #     A dining chair's width says very little, its height is what has to clear
+  #     the table, so the middle badge carries the same Total height value the
+  #     Details & Dimensions row shows - one source, one number, no drift.
+  #
+  #     Runs after every rule above so it replaces whatever they produced, and
+  #     before the manual override so a handle-specific label still wins. When
+  #     no total height resolves, badge_size keeps the width (or whatever else
+  #     the rules found) rather than emptying the badge.
+  #
+  #     Bar stools and every other type are untouched:
+  #     snippets/pdp-redo-is-dining-chair.liquid never claims a product that
+  #     passes the bar-stool test.
+  capture is_dining_chair
+    render 'pdp-redo-is-dining-chair', product: product
+  endcapture
+  assign is_dining_chair = is_dining_chair | strip
+
+  if is_dining_chair == 'true'
+    capture dining_total_height
+      render 'pdp-redo-spec-value', product: product, field: 'total_height'
+    endcapture
+    assign dining_total_height = dining_total_height | strip
+
+    if dining_total_height != ''
+      assign badge_size = dining_total_height | append: 'cm High'
+    endif
+  endif
+
+  # manual override always wins
+  if badge_override != ''
+    assign badge_size = badge_override
+  endif
+
+  # 4. COLOUR (slot 3)
+  # Priority (a): product option explicitly named "Colour" or "Color"
+  assign badge_feature = ''
+  for opt in product.options_with_values
+    if badge_feature == ''
+      assign opt_name_l = opt.name | downcase
+      if opt_name_l == 'colour' or opt_name_l == 'color'
+        assign badge_feature = opt.values | first
+      endif
+    endif
+  endfor
+
+  # Priority (b): keyword scan of title + description (same pattern as matlist)
+  if badge_feature == ''
+    assign colourlist = 'cream:Cream,ivory:Ivory,white:White,black:Black,charcoal:Charcoal,charcoal grey:Charcoal Grey,grey:Grey,gray:Grey,silver:Silver,navy:Navy Blue,navy blue:Navy Blue,blue:Blue,teal:Teal,green:Green,sage:Sage,olive:Olive,beige:Beige,taupe:Taupe,tan:Tan,brown:Brown,mustard:Mustard,ochre:Ochre,pink:Pink,blush:Blush,rust:Rust,terracotta:Terracotta,gold:Gold,natural:Natural'
+    assign cpairs = colourlist | split: ','
+    for pair in cpairs
+      if badge_feature == ''
+        assign kv = pair | split: ':'
+        assign needle = kv[0]
+        if hay contains needle
+          assign badge_feature = kv[1]
+        endif
+      endif
+    endfor
+  endif
+
+  # Fallback: "Natural Tone" — suits unfinished/wood furniture and is never misleading
+  if badge_feature == ''
+    assign badge_feature = 'Natural Tone'
+  endif
+%}
+
+{%- capture is_barstool -%}{%- render 'pdp-redo-is-barstool', product: product -%}{%- endcapture -%}
+{%- assign is_barstool = is_barstool | strip -%}
+
+{%- if is_barstool != 'true' -%}
+<div
+  class="description-preview spacing-style"
+  style="{% render 'spacing-style', settings: block_settings %}"
+  {{ block.shopify_attributes }}
+>
+  {% if description != blank %}
+    <p class="description-preview__text">{{ description | truncate: truncate_length, '...' }} <a href="#" class="description-preview__read-more link" data-scroll-to-accordion aria-label="Read more">{{ block_settings.read_more_text | default: 'Read more' }}</a></p>
+  {% endif %}
+
+  {% if block_settings.enable_badges %}
+    <div class="product-badges" data-cd-badges style="display:none;position:relative;z-index:2;background:var(--color-background,#fff);width:100%;padding:4px 0 2px;margin:0 0 -8px;">
+      <span class="cd-badge" style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:2px 6px;text-align:center;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" style="width:22px;height:22px;opacity:.7;flex:none;"><path d="M3 12V5a2 2 0 0 1 2-2h7l9 9-9 9-9-9Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+        <span style="font-size:12.5px;font-weight:500;letter-spacing:.3px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">{{ badge_material }}</span>
+      </span>
+      <span class="cd-badge" style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:2px 6px;text-align:center;border-left:1px solid rgba(0,0,0,.13);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" style="width:22px;height:22px;opacity:.7;flex:none;"><path d="M3 8h18v8H3z"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg>
+        <span style="font-size:12.5px;font-weight:500;letter-spacing:.3px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">{{ badge_size }}</span>
+      </span>
+      <span class="cd-badge" style="flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:2px 6px;text-align:center;border-left:1px solid rgba(0,0,0,.13);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true" style="width:22px;height:22px;opacity:.7;flex:none;"><path d="M12 3C12 3 5 11 5 15.5a7 7 0 0 0 14 0C19 11 12 3 12 3Z"/></svg>
+        <span style="font-size:12.5px;font-weight:500;letter-spacing:.3px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;">{{ badge_feature }}</span>
+      </span>
+    </div>
+  {% endif %}
+</div>
+
+{%- endif -%}
+
+{% javascript %}
+  document.addEventListener('DOMContentLoaded', function() {
+    const readMoreLinks = document.querySelectorAll('[data-scroll-to-accordion]');
+
+    readMoreLinks.forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+
+        const accordions = document.querySelectorAll('.accordion accordion-custom, accordion-custom');
+        let targetAccordion = null;
+
+        for (const accordion of accordions) {
+          const summary = accordion.querySelector('summary');
+          if (summary) {
+            const headingText = summary.textContent.toLowerCase();
+            if (headingText.includes('description') || headingText.includes('details')) {
+              targetAccordion = accordion;
+              break;
+            }
+          }
+        }
+
+        if (!targetAccordion) {
+          const accordionContainer = document.querySelector('.product-information__accordion-container');
+          if (accordionContainer) {
+            targetAccordion = accordionContainer.querySelector('accordion-custom');
+          }
+        }
+
+        if (!targetAccordion) {
+          targetAccordion = document.querySelector('accordion-custom');
+        }
+
+        if (targetAccordion) {
+          const headerOffset = 100;
+          const elementPosition = targetAccordion.getBoundingClientRect().top;
+          const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+          window.scrollTo({
+            top: offsetPosition,
+            behavior: 'smooth'
+          });
+
+          setTimeout(() => {
+            const details = targetAccordion.querySelector('details');
+            if (details && !details.open) {
+              details.open = true;
+            }
+          }, 500);
+        }
+      });
+    });
+  });
+{% endjavascript %}
+
+{% stylesheet %}
+  .description-preview {
+    width: 100%;
+  }
+
+  .description-preview__text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--color-foreground);
+    margin: 0;
+  }
+
+  .description-preview__read-more {
+    display: inline;
+    margin-left: 0;
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+
+  .description-preview__read-more:hover {
+    text-decoration-color: var(--color-foreground);
+  }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "PDP Redo badges",
+  "tag": null,
+  "settings": [
+    {
+      "type": "range",
+      "id": "truncate_length",
+      "label": "Character limit",
+      "min": 50,
+      "max": 300,
+      "step": 10,
+      "default": 150
+    },
+    {
+      "type": "text",
+      "id": "read_more_text",
+      "label": "Read more text",
+      "default": "Read more"
+    },
+    {
+      "type": "header",
+      "content": "A/B Test Badges"
+    },
+    {
+      "type": "checkbox",
+      "id": "enable_badges",
+      "label": "Render the 3 icon badges (hidden on bar stools)",
+      "info": "Badges stay hidden until Intelligems reveals them. Leaving this on does not change the control.",
+      "default": true
+    },
+    {
+      "type": "header",
+      "content": "Padding"
+    },
+    {
+      "type": "range",
+      "id": "padding-block-start",
+      "label": "Top",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "default": 0
+    },
+    {
+      "type": "range",
+      "id": "padding-block-end",
+      "label": "Bottom",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "unit": "px",
+      "default": 16
+    }
+  ],
+  "presets": [
+    {
+      "name": "PDP Redo badges",
+      "category": "Product"
+    }
+  ]
+}
+{% endschema %}

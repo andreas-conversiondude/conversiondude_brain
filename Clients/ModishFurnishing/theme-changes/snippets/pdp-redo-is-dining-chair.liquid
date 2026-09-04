@@ -1,0 +1,70 @@
+{%- doc -%}
+  Determines whether a product is a dining chair. Outputs the literal string
+  "true" or "false" so the caller can capture and compare, matching the
+  convention in snippets/pdp-redo-is-barstool.liquid.
+
+  Used by blocks/pdp-redo-specs.liquid, which shows Total height instead of
+  Width on dining chairs. Bar stools are excluded outright: a product that
+  passes the bar-stool test is never treated as a dining chair, so the two
+  groups can never both claim the same product and bar stools keep their
+  existing rows.
+
+  Eligibility (any of), and NOT a bar stool:
+    - product.type handleizes to dining-chair(s) / diningchair(s) / kitchen-chair(s)
+    - product belongs to the "dining-chairs" collection
+    - product has tag "dining-chairs", "dining-chair" or "dining chair"
+    - product title mentions "dining chair"
+
+  @param {object} product
+
+  @example
+    {%- capture is_dining_chair -%}
+      {%- render 'pdp-redo-is-dining-chair', product: product -%}
+    {%- endcapture -%}
+    {%- assign is_dining_chair = is_dining_chair | strip -%}
+    {%- if is_dining_chair == 'true' -%} ... {%- endif -%}
+{%- enddoc -%}
+{%- liquid
+  assign is_dining_chair = false
+  assign pth = product.type | handleize
+
+  if pth == 'dining-chair' or pth == 'dining-chairs' or pth == 'diningchair' or pth == 'diningchairs' or pth == 'kitchen-chair' or pth == 'kitchen-chairs'
+    assign is_dining_chair = true
+  endif
+
+  unless is_dining_chair
+    for c in product.collections
+      if c.handle == 'dining-chairs'
+        assign is_dining_chair = true
+        break
+      endif
+    endfor
+  endunless
+
+  unless is_dining_chair
+    if product.tags contains 'dining-chairs' or product.tags contains 'dining-chair' or product.tags contains 'dining chair'
+      assign is_dining_chair = true
+    endif
+  endunless
+
+  unless is_dining_chair
+    assign title_l = product.title | downcase
+    if title_l contains 'dining chair'
+      assign is_dining_chair = true
+    endif
+  endunless
+
+  comment
+    A bar stool always wins. Without this a product tagged for both groups
+    would lose its Width row, and bar stools are supposed to be untouched.
+  endcomment
+  if is_dining_chair
+    capture is_barstool
+      render 'pdp-redo-is-barstool', product: product
+    endcapture
+    assign is_barstool = is_barstool | strip
+    if is_barstool == 'true'
+      assign is_dining_chair = false
+    endif
+  endif
+-%}{% if is_dining_chair %}true{% else %}false{% endif %}
