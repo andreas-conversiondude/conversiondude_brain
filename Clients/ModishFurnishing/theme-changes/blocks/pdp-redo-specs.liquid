@@ -1,15 +1,15 @@
 {%- comment -%}
   PDP Redo — open spec table, replacing the four accordions.
 
-  Rows: seat height, total height, width, depth, colour, design, fabric, frame,
+  Rows: seat height, total height, width, depth, colour, fabric, frame,
   assembly. Every value resolves through snippets/pdp-redo-spec-value.liquid,
   which reads the custom.* metafield first and falls back to parsing the product
   description. A row whose value comes back blank is not rendered, so the table
   never shows an empty cell.
 
-  Colour and Design have no metafield to fill in: they are read off the
-  "Colour:" / "Design:" lines of the description's Specifications block. A
-  product whose description omits a label simply loses that row.
+  Colour has no metafield to fill in: it is read off the "Colour:" line of the
+  description's Specifications block. A product whose description omits the
+  label simply loses that row.
 
   ONE LINE PER ROW
   ----------------
@@ -57,9 +57,6 @@
   capture colour
     render 'pdp-redo-spec-value', product: product, field: 'colour'
   endcapture
-  capture design
-    render 'pdp-redo-spec-value', product: product, field: 'design'
-  endcapture
   capture fabric
     render 'pdp-redo-spec-value', product: product, field: 'fabric'
   endcapture
@@ -75,7 +72,6 @@
   assign spec_width = spec_width | strip
   assign spec_depth = spec_depth | strip
   assign colour = colour | strip
-  assign design = design | strip
   assign fabric = fabric | strip
   assign frame = frame | strip
   assign assembly = assembly | strip
@@ -96,7 +92,7 @@
   endif
 
   assign row_count = 0
-  assign all_values = seat_height | append: total_height | append: spec_width | append: spec_depth | append: colour | append: design | append: fabric | append: frame | append: assembly
+  assign all_values = seat_height | append: total_height | append: spec_width | append: spec_depth | append: colour | append: fabric | append: frame | append: assembly
   if all_values != blank
     assign row_count = 1
   endif
@@ -144,9 +140,6 @@
         {%- endif -%}
         {%- if colour != blank -%}
           <tr><th scope="row">Colour</th><td title="{{ colour | escape }}">{{ colour }}</td></tr>
-        {%- endif -%}
-        {%- if design != blank -%}
-          <tr><th scope="row">Design</th><td title="{{ design | escape }}">{{ design }}</td></tr>
         {%- endif -%}
         {%- if fabric != blank -%}
           <tr><th scope="row">Fabric</th><td title="{{ fabric | escape }}">{{ fabric }}</td></tr>
@@ -282,7 +275,7 @@
   "settings": [
     {
       "type": "paragraph",
-      "content": "Always-visible spec table with the dimension diagram underneath. Values read the custom.* metafields and fall back to the product description; Colour and Design are read from the description only. Blank values drop their row. Dining chairs show Total height in place of Width."
+      "content": "Always-visible spec table with the dimension diagram underneath. Values read the custom.* metafields and fall back to the product description; Colour is read from the description only. Blank values drop their row. Dining chairs show Total height in place of Width."
     },
     {
       "type": "text",

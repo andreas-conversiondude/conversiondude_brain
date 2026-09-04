@@ -8,7 +8,7 @@
   sent to the browser, so there is no flash of the old content and no layout
   shift. The description itself is never modified: the full text stays in the
   Shopify admin, which is what snippets/pdp-redo-description-label.liquid parses
-  the Colour and Design rows out of.
+  the Colour row out of.
 
   The heading is matched case-insensitively and works wherever it sits - bare
   text, <strong>, <b> or any <h1>-<h6> - because the search runs on a
@@ -16,10 +16,10 @@
   A description with no "Dimensions:" heading keeps all of its copy.
 
   Whatever is left at the end is then peeled off - after a cut or not - so the
-  intro always ends on
-  the last line of visible text: no empty paragraph, no half-open heading, and
-  no blockquote or table shell left holding a border that would show up under
-  the copy as a stray line. Images and other embedded media are kept.
+  intro always ends on the last line of visible text. An empty paragraph, a
+  half-open heading, a blockquote or table shell still holding a border, a
+  leftover "|" separator: each of those shows under the copy as a stray line,
+  and each is removed. Images and other embedded media are kept.
 
   @param {object} product - the product object
 
@@ -76,7 +76,16 @@
       image.
     endcomment
     assign media_tags = '<img,<iframe,<video,<audio,<source,<picture,<svg,<canvas,<object,<embed' | split: ','
-    assign blank_tails = '&nbsp;,&#160;,&#xa0;,&#xA0;, ' | split: ','
+
+    comment
+      The pipe is content in name only. Descriptions in this shop carry a "|"
+      between the intro copy and the dimensions block - the separator the old
+      accordion split the description on - and it usually sits in a paragraph
+      or span of its own. Left in, it draws the short vertical line that used
+      to appear under the last line of copy. Counting it as blank is what lets
+      the sweep below take it, and the empty wrapper around it, away.
+    endcomment
+    assign blank_tails = '&nbsp;,&#160;,&#xa0;,&#xA0;, ,|' | split: ','
 
     for pass in (1..40)
       assign intro = intro | strip

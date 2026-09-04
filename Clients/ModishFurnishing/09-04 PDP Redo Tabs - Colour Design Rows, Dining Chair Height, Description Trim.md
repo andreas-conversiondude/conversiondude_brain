@@ -184,3 +184,28 @@ Verified against 20 shapes, including an empty paragraph, an nbsp-only
 paragraph, a blockquote shell, a table shell, trailing `<hr>` and `<br>`,
 stacked empty spans, and the same cases with no "Dimensions:" heading at all.
 Theme-check clean.
+
+## The stray line was the "|" separator (same day)
+
+The first sweep did not remove it because it is not empty markup - it is a
+literal pipe character. Every description in this shop carries a "|" between the
+intro copy and the dimensions block, usually as `<span>|</span>` or `<p>|</p>`.
+The old accordion blocks still in the template split the description on exactly
+that marker, which is what it is there for. Rendered on its own it draws a short
+vertical line.
+
+`pdp-redo-description-intro.liquid` now counts "|" as blank alongside the hard
+spaces, so the pipe goes and the empty paragraph or span left around it goes
+with it on the next pass.
+
+Verified against 7 more shapes: pipe in a span, in its own paragraph, in a
+`<strong>`, in an `<h3>`, padded with `&nbsp;`, bare between blocks, and with no
+"Dimensions:" heading at all.
+
+## Design row removed (same day)
+
+`blocks/pdp-redo-specs.liquid` no longer renders the Design row. The capture,
+the strip, the row_count value and the `<tr>` are all gone. Colour stays and
+still comes from the description parse. `pdp-redo-spec-value.liquid` keeps its
+`design` field - nothing calls it now, but the parser is shared and a future row
+can use it.
