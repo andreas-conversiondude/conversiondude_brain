@@ -59,7 +59,23 @@
       value, and removes any style="color: ..." attribute before the search
       runs, so an inline style can never be mistaken for the Colour line.
     endcomment
-    assign text = text | strip_html | replace: '&nbsp;', ' '
+    assign text = text | strip_html
+
+    comment
+      Normalise the label punctuation before searching. Rich-text editors leave
+      shapes that look identical on screen but do not match a plain "colour:"
+      search: an &nbsp; entity or a literal non-breaking space between the label
+      and its colon, which is what copy pasted out of Word carries. Both become
+      a normal space, then a space in front of a colon is dropped, so every
+      shape collapses to "Colour: value".
+
+      The second replace below looks like it swaps a space for a space. It does
+      not: the first argument is a literal U+00A0 non-breaking space. Do not
+      "tidy" it away.
+    endcomment
+    assign text = text | replace: '&nbsp;', ' '
+    assign text = text | replace: ' ', ' '
+    assign text = text | replace: ' :', ':'
     assign lower = text | downcase
 
     comment
@@ -78,7 +94,22 @@
           assign needle_size = needle | size
           assign start = lower | split: needle | first | size | plus: needle_size
           assign value = text | slice: start, 500
-          assign value = value | split: '~NL~' | first
+          assign rest_lines = value | split: '~NL~'
+          assign value = rest_lines | first | strip
+
+          comment
+            Some descriptions put the label on its own line with the value on
+            the next one. Taking only what follows the colon returns nothing
+            there and the row disappears, so fall through to the first non-empty
+            line instead.
+          endcomment
+          if value == blank
+            for line in rest_lines
+              if value == blank
+                assign value = line | strip
+              endif
+            endfor
+          endif
 
           for stop in stop_labels
             assign value = value | split: stop | first

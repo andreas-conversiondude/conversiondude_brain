@@ -133,3 +133,27 @@ The default template's `product-description-review.liquid` is untouched.
 Verified against a Liquid engine, 7 cases: dining chair by type / collection /
 tag / title all render "86cm High"; a dining chair with no dimension block keeps
 "54cm Wide"; bar stool and sofa keep "54cm Wide".
+
+## Colour row still blank on the live PDP (same day)
+
+After removing the ColorDrop metafield read, the Colour row disappeared instead
+of showing a value: the description parse was not matching the real markup. The
+"[ColorDrop]" text had been masking that all along, since it came from the
+metafield, not the parse.
+
+`snippets/pdp-redo-description-label.liquid` now normalises before searching:
+
+- `&nbsp;` entity and literal U+00A0 both become a normal space
+- a space in front of the colon is dropped, so "Colour :" and "Colour&nbsp;:"
+  collapse to "Colour:"
+- a label whose value sits on the NEXT line (own paragraph or after a `<br>`)
+  falls through to the first non-empty line instead of returning nothing
+
+`pdp-redo-spec-value.liquid` also accepts "Colours:" and "Colors:" for the
+Colour row. The Design row is untouched - it shares the same parser, so it
+benefits from the normalisation, but no design-specific logic or alias changed.
+
+Verified against 12 markup shapes: plain label, entity nbsp, literal nbsp, plain
+space before colon, colon outside the bold tag, value on the next line, label in
+its own paragraph, American spelling, plural label, list-item markup, nbsp
+inside the value, and no label at all (correctly blank).

@@ -92,7 +92,7 @@
     endcomment
     if field == 'colour'
       capture result
-        render 'pdp-redo-description-label', product: product, labels: 'colour,color'
+        render 'pdp-redo-description-label', product: product, labels: 'colour,color,colours,colors'
       endcapture
       assign result = result | strip
       assign was_parsed = true
